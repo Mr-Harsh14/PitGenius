@@ -1,10 +1,10 @@
 import streamlit as st
 from typing import Dict, Any
 
-class F1StrategyApp:
+class PitGeniusApp:
     def __init__(self):
         st.set_page_config(
-            page_title="F1 Strategy System",
+            page_title="PitGenius",
             page_icon="🏎️",
             layout="wide"
         )
@@ -16,7 +16,7 @@ class F1StrategyApp:
             st.session_state.race_data = None
 
     def main(self):
-        st.title("Formula 1 Race Strategy System")
+        st.title("PitGenius")
         
         # Sidebar
         with st.sidebar:
@@ -59,5 +59,5 @@ class F1StrategyApp:
         # Add performance analysis components
 
 if __name__ == "__main__":
-    app = F1StrategyApp()
+    app = PitGeniusApp()
     app.main() 
