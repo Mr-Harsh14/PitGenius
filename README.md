@@ -1,16 +1,13 @@
-# Formula 1 Race Strategy System
+# PitGenius: F1 Race Strategy System
 
 ## Overview
-
-This system provides pre-race strategy recommendations for Formula 1 teams, leveraging machine learning techniques to optimize race strategies based on various factors. It includes features for driver/team preference modeling and scenario simulation.
+PitGenius is an advanced Formula 1 race strategy system that provides pre-race strategy recommendations using machine learning techniques. It helps teams optimize their race strategies by considering various factors including tire degradation, weather conditions, and driver preferences.
 
 ## Features
-
 - Pre-Race Strategy Recommendation
 - Driver/Team Preference Modeling
 - Scenario Simulation and Comparison
 - Performance Metrics and Reporting
 
 ## Installation
-
 1. Clone the repository
