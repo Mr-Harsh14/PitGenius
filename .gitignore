@@ -95,3 +95,11 @@ wheels/
 .Trashes
 ehthumbs.db
 Thumbs.db 
+
+# Ignore everything in cache directory except .gitkeep
+data/cache/*
+!data/cache/.gitkeep
+
+# Ignore raw data files but keep directory structure
+data/raw/*
+!data/raw/.gitkeep 
