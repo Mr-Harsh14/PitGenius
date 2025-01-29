@@ -26,8 +26,11 @@ env/
 ENV/
 .env
 .venv
+env.bak/
+venv.bak/
+env.yml
 
-# IDE specific files
+# IDE
 .idea/
 .vscode/
 *.swp
@@ -38,23 +41,13 @@ ENV/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*/.ipynb_checkpoints/*
+*.ipynb_checkpoints/
+*.ipynb
 
-# FastF1 cache
-data/raw/fastf1_cache/
-
-# Project specific
-data/raw/*
-data/processed/*
-data/models/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-!data/models/.gitkeep
-
-# Logs
-*.log
-logs/
-logging/
+# Distribution / packaging
+.Python
+*.manifest
+*.spec
 
 # Unit test / coverage reports
 htmlcov/
@@ -66,40 +59,45 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
-.pytest_cache/
 
-# Distribution / packaging
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# FastF1 specific
+cache/
+*.cache
 
-# OS generated files
+# Data files
+*.csv
+*.json
+*.pkl
+*.ff1pkl
+*.h5
+*.parquet
+
+# Exceptions for data that should be tracked
+!requirements.txt
+!setup.py
+!src/data/processed/README.md
+!src/data/raw/README.md
+
+# OS specific
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
 
-# Ignore everything in cache directory except .gitkeep
-data/cache/*
-!data/cache/.gitkeep
+# Logs
+*.log
+logs/
+log/
 
-# Ignore raw data files but keep directory structure
-data/raw/*
-!data/raw/.gitkeep 
+# Environment variables
+.env
+.env.*
+
+# Large files
+*.zip
+*.tar.gz
+*.rar
+*.7z 
