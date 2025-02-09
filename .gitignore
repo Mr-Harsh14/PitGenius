@@ -63,6 +63,7 @@ coverage.xml
 # FastF1 specific
 cache/
 *.cache
+<<<<<<< HEAD
 data/raw/fastf1_cache/
 
 # Project specific directories
@@ -71,6 +72,8 @@ data/processed/
 data/external/
 predictions/*/
 reports/figures/*/
+=======
+>>>>>>> parent of ecb9a78 (Streamlit app)
 
 # Model files and directories
 models/*
@@ -87,23 +90,21 @@ models/random_forest/*
 *.ff1pkl
 *.h5
 *.parquet
+<<<<<<< HEAD
 *.joblib
 *.h5
 *.keras
 *.pt
 *.pth
 *.onnx
+=======
+>>>>>>> parent of ecb9a78 (Streamlit app)
 
 # Exceptions for data that should be tracked
 !requirements.txt
 !setup.py
 !src/data/processed/README.md
 !src/data/raw/README.md
-!src/data/interim/README.md
-!src/data/external/README.md
-!models/README.md
-!predictions/README.md
-!reports/figures/README.md
 
 # OS specific
 .DS_Store
