@@ -62,210 +62,67 @@ def get_race_data(year: int, gp_name: str) -> pd.DataFrame:
     
     return laps_df
 
-def prepare_features(raw_data: pd.DataFrame) -> pd.DataFrame:
+def prepare_features(race_data: pd.DataFrame) -> pd.DataFrame:
     """
-    Prepare features for prediction using the same pipeline as training.
+    Prepare features for prediction from race data.
     
     Args:
-        raw_data: Raw race data
+        race_data: DataFrame containing race data
         
     Returns:
-        DataFrame with engineered features
+        DataFrame containing prepared features
     """
-    # Add required columns if missing
-    required_columns = {
-        'Year': None,
-        'RaceNumber': None,
-        'Driver': None,
-        'Team': None,
-        'LapNumber': None,
-        'Compound': 'MEDIUM',  # Default to medium compound
-        'QualyPosition': -1,   # Default to back of grid
-        'DriverStandings': -1  # Default to back of standings
-    }
-    
-    raw_data = raw_data.copy()
-    for col, default_value in required_columns.items():
-        if col not in raw_data.columns:
-            logger.warning(f"Adding missing column: {col} with default value: {default_value}")
-            raw_data[col] = default_value
-    
-    # Store original data we want to preserve
-    original_data = raw_data[['Driver', 'LapNumber']].copy()
+    logger.info("Preparing features for prediction")
     
     # Initialize feature engineer
-    engineer = F1FeatureEngineer(
-        processed_data_dir='data/processed',
-        interim_data_dir='data/interim'
-    )
+    engineer = F1FeatureEngineer()
     
-    # Process features
-    transformed_df, _ = engineer.apply_feature_engineering(raw_data)
+    # Clean data first
+    cleaner = F1DataCleaner()
+    cleaned_data = cleaner.clean_race_data(race_data)
     
-    # Drop target variables as we don't have them for prediction
-    if 'has_pit_stop' in transformed_df.columns:
-        transformed_df = transformed_df.drop(['has_pit_stop', 'good_pit_stop'], axis=1)
+    # Engineer features
+    features = engineer.create_features(cleaned_data)
     
-    # Handle empty DataFrame case
-    if transformed_df.empty:
-        logger.error("Feature engineering produced empty DataFrame")
-        return pd.DataFrame()
+    # Select only the features used by the model
+    model_features = [
+        'TyreLife', 'DegradationPercentage', 'RollingDegradation', 'TempImpact',
+        'GapToLeaderSeconds', 'RollingPaceSeconds', 'PaceConsistencySeconds',
+        'UndercutPotential', 'PitWindowOptimality', 'TempSensitivity',
+        'TrackEvolution', 'Position', 'PositionChange'
+    ]
     
-    # Ensure we have features to work with
-    if len(transformed_df.columns) == 0:
-        logger.error("No features available after transformation")
-        return pd.DataFrame()
+    # Ensure all required features exist
+    for feature in model_features:
+        if feature not in features.columns:
+            features[feature] = 0  # Default value for missing features
     
-    # Add back original data
-    transformed_df = pd.concat([transformed_df, original_data], axis=1)
-    
-    logger.info(f"Prepared {len(transformed_df.columns)} features for prediction")
-    return transformed_df
+    return features[model_features]
 
-def predict_race_pit_stops(model, race_data: pd.DataFrame, probability_threshold: float = 0.5) -> pd.DataFrame:
+def predict_race_pit_stops(model: 'RandomForestModel', features: pd.DataFrame) -> pd.DataFrame:
     """
     Make pit stop predictions for a race.
     
     Args:
         model: Trained Random Forest model
-        race_data: Race data with features
-        probability_threshold: Threshold for pit stop prediction
+        features: DataFrame containing race features
         
     Returns:
-        DataFrame with predictions including tyre compounds
+        DataFrame containing predictions and probabilities
     """
-    try:
-        # Get prediction probabilities
-        if race_data.empty:
-            logger.error("Cannot make predictions on empty DataFrame")
-            return pd.DataFrame()
-            
-        # Log available columns for debugging
-        logger.info(f"Available columns: {race_data.columns.tolist()}")
-        
-        # Get feature names from the model
-        model_features = model.model.feature_names_in_
-        logger.info(f"Model features: {model_features.tolist()}")
-        
-        # Ensure all model features are present in race_data
-        missing_features = set(model_features) - set(race_data.columns)
-        if missing_features:
-            # For categorical features, we can add them with zeros
-            # This assumes they're one-hot encoded and not present in this race
-            for feature in missing_features:
-                if feature.startswith(('cat__Team_', 'cat__Driver_', 'cat__Compound_')):
-                    race_data[feature] = 0
-                else:
-                    logger.error(f"Missing non-categorical feature: {feature}")
-                    return pd.DataFrame()
-        
-        # Select only the features used by the model
-        race_data_model = race_data[model_features]
-        
-        # Make predictions
-        pit_probs = model.model.predict_proba(race_data_model)[:, 1]
-        
-        # Create predictions DataFrame with original index
-        predictions = pd.DataFrame(index=race_data.index)
-        predictions['Driver'] = race_data['Driver']
-        predictions['LapNumber'] = race_data['LapNumber']
-        predictions['PitProbability'] = pit_probs
-        predictions['PredictedPitStop'] = False
-        
-        # Get race length for strategy planning
-        race_length = race_data['LapNumber'].max()
-        
-        # Process each driver separately
-        for driver in predictions['Driver'].unique():
-            driver_preds = predictions[predictions['Driver'] == driver].copy()
-            
-            # Find peaks above threshold
-            above_threshold = driver_preds[driver_preds['PitProbability'] >= probability_threshold]
-            
-            if not above_threshold.empty:
-                # Sort by probability to get highest peaks first
-                peaks = above_threshold.sort_values('PitProbability', ascending=False)
-                
-                # Initialize list of selected peaks
-                selected_laps = []
-                
-                for _, peak in peaks.iterrows():
-                    # Check if this peak is far enough from all selected peaks
-                    if not selected_laps or all(abs(peak['LapNumber'] - lap) >= 10 for lap in selected_laps):
-                        selected_laps.append(peak['LapNumber'])
-                
-                # Sort selected laps by lap number
-                selected_laps.sort()
-                
-                # Get initial compound from race data
-                initial_compound = 'SOFT'  # Default to SOFT for first stint
-                for compound in ['SOFT', 'MEDIUM', 'HARD']:
-                    if f'cat__Compound_{compound}' in race_data.columns and \
-                       race_data.loc[
-                           (race_data['Driver'] == driver) & 
-                           (race_data['LapNumber'] == 1),
-                           f'cat__Compound_{compound}'
-                       ].iloc[0] == 1:
-                        initial_compound = compound
-                        break
-                
-                # Initialize compounds array for all laps
-                driver_compounds = np.full(int(race_length) + 1, initial_compound)
-                
-                # Plan strategy based on number of stops
-                n_stops = len(selected_laps)
-                
-                if n_stops == 1:
-                    # One-stop strategy
-                    if initial_compound == 'SOFT':
-                        driver_compounds[selected_laps[0]:] = 'HARD'
-                    elif initial_compound == 'MEDIUM':
-                        driver_compounds[selected_laps[0]:] = 'HARD'
-                    else:  # HARD
-                        driver_compounds[selected_laps[0]:] = 'MEDIUM'
-                
-                elif n_stops == 2:
-                    # Two-stop strategy
-                    if initial_compound == 'SOFT':
-                        driver_compounds[selected_laps[0]:selected_laps[1]] = 'HARD'
-                        driver_compounds[selected_laps[1]:] = 'MEDIUM'
-                    elif initial_compound == 'MEDIUM':
-                        driver_compounds[selected_laps[0]:selected_laps[1]] = 'HARD'
-                        driver_compounds[selected_laps[1]:] = 'SOFT'
-                    else:  # HARD
-                        driver_compounds[selected_laps[0]:selected_laps[1]] = 'MEDIUM'
-                        driver_compounds[selected_laps[1]:] = 'SOFT'
-                
-                else:
-                    # Three or more stops - alternate between compounds
-                    for i, pit_lap in enumerate(selected_laps):
-                        next_pit = selected_laps[i + 1] if i + 1 < len(selected_laps) else race_length + 1
-                        if driver_compounds[pit_lap - 1] == 'SOFT':
-                            driver_compounds[pit_lap:next_pit] = 'HARD'
-                        elif driver_compounds[pit_lap - 1] == 'HARD':
-                            driver_compounds[pit_lap:next_pit] = 'MEDIUM'
-                        else:  # MEDIUM
-                            driver_compounds[pit_lap:next_pit] = 'SOFT'
-                
-                # Update predictions DataFrame
-                predictions.loc[predictions['Driver'] == driver, 'CurrentCompound'] = [
-                    driver_compounds[int(lap)] for lap in predictions.loc[predictions['Driver'] == driver, 'LapNumber']
-                ]
-                
-                # Mark pit stops
-                for pit_lap in selected_laps:
-                    predictions.loc[
-                        (predictions['Driver'] == driver) & 
-                        (predictions['LapNumber'] == pit_lap),
-                        'PredictedPitStop'
-                    ] = True
-        
-        logger.info(f"Made predictions for {len(predictions)} laps")
-        return predictions
-        
-    except Exception as e:
-        logger.error(f"Error during prediction: {str(e)}")
-        return pd.DataFrame()
+    logger.info("Making pit stop predictions")
+    
+    # Get probabilities
+    probas = model.predict_proba(features)
+    
+    # Create results DataFrame
+    predictions = pd.DataFrame({
+        'lap': features.index,
+        'pit_probability': probas[:, 1],  # Probability of pit stop
+        'predicted_pit': probas[:, 1] > 0.4  # Using 0.4 threshold
+    })
+    
+    return predictions
 
 def main():
     """Main function to predict pit stops for all 2024 races."""

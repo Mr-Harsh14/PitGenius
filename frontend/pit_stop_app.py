@@ -29,6 +29,89 @@ cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
 cache_dir.mkdir(parents=True, exist_ok=True)
 fastf1.Cache.enable_cache(str(cache_dir))
 
+# App title and description
+st.title('PitGenius: F1 Pit Stop Predictions')
+st.write('Predict pit stop strategies for Formula 1 races using machine learning. Select a race and driver to see predicted pit stops and tire compounds.')
+
+@st.cache_resource
+def load_trained_model():
+    """Load the trained model (cached)"""
+    try:
+        seasons = [2022, 2023]
+        model = load_model(seasons)
+        st.success("Model loaded successfully!")
+        return model
+    except Exception as e:
+        st.error(f"Error loading model: {str(e)}")
+        logger.error(f"Error loading model: {str(e)}")
+        return None
+
+# Load model
+model = load_trained_model()
+
+if model is None:
+    st.error("Failed to load model. Please check the logs for details.")
+    st.stop()
+
+# Race selection
+st.header('Race Selection')
+race = st.selectbox(
+    'Select Race',
+    ['Bahrain Grand Prix', 'Saudi Arabian Grand Prix', 'Australian Grand Prix',
+     'Azerbaijan Grand Prix', 'Miami Grand Prix', 'Monaco Grand Prix',
+     'Spanish Grand Prix', 'Canadian Grand Prix', 'Austrian Grand Prix',
+     'British Grand Prix', 'Hungarian Grand Prix', 'Belgian Grand Prix',
+     'Dutch Grand Prix', 'Italian Grand Prix', 'Singapore Grand Prix',
+     'Japanese Grand Prix', 'Qatar Grand Prix', 'United States Grand Prix',
+     'Mexico City Grand Prix', 'São Paulo Grand Prix', 'Las Vegas Grand Prix',
+     'Abu Dhabi Grand Prix']
+)
+
+# Team selection
+st.header('Driver Selection')
+teams = sorted(list(set(driver['team'] for driver in drivers_2024)))
+selected_team = st.selectbox('Select Team', teams)
+
+# Filter drivers by selected team
+team_drivers = [driver for driver in drivers_2024 if driver['team'] == selected_team]
+selected_driver = st.selectbox(
+    'Select Driver',
+    [f"{driver['name']} ({driver['code']})" for driver in team_drivers]
+)
+
+if st.button('Analyze Race Strategy'):
+    try:
+        # Get race data
+        race_data = get_race_data(2024, race)
+        
+        # Prepare features
+        features = prepare_features(race_data)
+        
+        # Make predictions
+        predictions = predict_race_pit_stops(model, features)
+        
+        # Display results
+        st.header('Pit Stop Predictions')
+        st.write(f"Analyzing {selected_driver}'s strategy for {race}")
+        
+        # Create visualization
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(predictions['lap'], predictions['pit_probability'])
+        ax.set_title(f'Pit Stop Probability - {selected_driver} at {race}')
+        ax.set_xlabel('Lap')
+        ax.set_ylabel('Probability')
+        ax.grid(True)
+        
+        st.pyplot(fig)
+        
+        # Show detailed predictions
+        st.subheader('Detailed Analysis')
+        st.dataframe(predictions)
+        
+    except Exception as e:
+        st.error(f"Error analyzing race strategy: {str(e)}")
+        logger.error(f"Error analyzing race strategy: {str(e)}")
+
 def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     """Create a visualization of predicted pit stops for a driver."""
     # Filter predictions for this driver
