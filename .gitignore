@@ -69,9 +69,14 @@ data/raw/fastf1_cache/
 data/interim/
 data/processed/
 data/external/
-models/*/
 predictions/*/
 reports/figures/*/
+
+# Ignore all model directories except specific files
+models/*
+!models/random_forest/
+models/random_forest/*
+!models/random_forest/rf_model_2022-2023.joblib
 
 # Data files
 *.csv
@@ -81,7 +86,7 @@ reports/figures/*/
 *.h5
 *.parquet
 
-# Model files
+# Model files (but allow specific exceptions)
 *.joblib
 *.h5
 *.keras

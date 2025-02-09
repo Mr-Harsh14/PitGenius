@@ -33,9 +33,29 @@ fastf1.Cache.enable_cache(str(cache_dir))
 st.title('PitGenius: F1 Pit Stop Predictions')
 st.write('Predict pit stop strategies for Formula 1 races using machine learning. Select a race and driver to see predicted pit stops and tire compounds.')
 
+def check_model_exists():
+    """Check if the model file exists and return appropriate message."""
+    model_dir = Path(project_root) / 'models' / 'random_forest'
+    model_file = model_dir / 'rf_model_2022-2023.joblib'
+    
+    if not model_file.exists():
+        st.error("Model file not found. The model needs to be trained first.")
+        st.info("""
+        To train the model:
+        1. Clone the repository locally
+        2. Install dependencies: `pip install -r requirements.txt`
+        3. Run the training script: `python src/models/train_random_forest.py`
+        4. Push the trained model to the repository
+        """)
+        return False
+    return True
+
 @st.cache_resource
 def load_trained_model():
     """Load the trained model (cached)"""
+    if not check_model_exists():
+        return None
+        
     try:
         seasons = [2022, 2023]
         model = load_model(seasons)
@@ -50,7 +70,7 @@ def load_trained_model():
 model = load_trained_model()
 
 if model is None:
-    st.error("Failed to load model. Please check the logs for details.")
+    st.warning("Please train the model before using the prediction interface.")
     st.stop()
 
 # Race selection
