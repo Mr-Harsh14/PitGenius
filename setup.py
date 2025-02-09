@@ -1,0 +1,36 @@
+from setuptools import find_packages, setup
+
+setup(
+    name="pitgenius",
+    version="0.1.0",
+    packages=find_packages(),
+    install_requires=[
+        "fastf1",
+        "pandas",
+        "numpy",
+        "scikit-learn",
+        "tensorflow",
+        "xgboost",
+        "streamlit",
+        "plotly",
+        "matplotlib",
+        "pytest",
+        "python-dotenv",
+        "pyyaml",
+    ],
+    author="Your Name",
+    author_email="your.email@example.com",
+    description="F1 Race Strategy Optimizer using Machine Learning",
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/yourusername/PitGenius",
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+    ],
+    python_requires=">=3.8",
+)
