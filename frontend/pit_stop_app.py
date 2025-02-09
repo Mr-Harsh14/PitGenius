@@ -6,21 +6,25 @@ st.set_page_config(
     layout="wide"
 )
 
-import fastf1
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
-import sys
-import os
 import logging
-from datetime import datetime
+import sys
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import fastf1
+import numpy as np
 import subprocess
+from datetime import datetime
+import os
 
 # Add project root to path
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
+
+from src.models.train_random_forest import load_model
+from src.models.predict_pit_stops import get_race_data, prepare_features, predict_race_pit_stops
 
 # Configure logging
 logging.basicConfig(
@@ -29,7 +33,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Define 2024 F1 drivers
+# Define 2024 F1 drivers and teams
 drivers_2024 = [
     {'code': 'VER', 'name': 'Max Verstappen', 'team': 'Red Bull Racing'},
     {'code': 'PER', 'name': 'Sergio Perez', 'team': 'Red Bull Racing'},
@@ -98,7 +102,6 @@ def load_trained_model():
         return None
         
     try:
-        from src.models.train_random_forest import load_model
         seasons = [2022, 2023]
         model = load_model(seasons)
         st.success("Model loaded successfully!")
@@ -197,126 +200,126 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     
     return fig
 
+def plot_pit_stop_predictions(predictions):
+    """Create a visualization of pit stop predictions."""
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Plot pit stop probabilities
+    ax.plot(predictions['lap'], predictions['pit_probability'], 
+            color='blue', linewidth=2, label='Pit Stop Probability')
+    
+    # Add threshold line
+    ax.axhline(y=0.4, color='red', linestyle='--', label='Decision Threshold (0.4)')
+    
+    # Highlight predicted pit stops
+    pit_stops = predictions[predictions['predicted_pit']]
+    if not pit_stops.empty:
+        ax.scatter(pit_stops['lap'], pit_stops['pit_probability'], 
+                  color='red', s=100, label='Predicted Pit Stops')
+    
+    # Customize plot
+    ax.set_xlabel('Lap Number')
+    ax.set_ylabel('Pit Stop Probability')
+    ax.set_title('Pit Stop Predictions')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    
+    return fig
+
+def display_strategy_insights(predictions, driver_name):
+    """Display pit stop strategy insights."""
+    st.subheader('Strategy Insights')
+    
+    # Get predicted pit stops
+    pit_stops = predictions[predictions['predicted_pit']]
+    n_stops = len(pit_stops)
+    
+    if n_stops == 0:
+        st.write("No pit stops predicted - likely a one-stop strategy.")
+    else:
+        st.write(f"Predicted {n_stops} pit stop{'s' if n_stops > 1 else ''} for {driver_name}")
+        
+        # Create a table of pit stop predictions
+        strategy_df = pd.DataFrame({
+            'Lap': pit_stops['lap'],
+            'Probability': pit_stops['pit_probability'].map('{:.1%}'.format)
+        }).reset_index(drop=True)
+        
+        strategy_df.index = [f"Stop {i+1}" for i in range(len(strategy_df))]
+        st.table(strategy_df)
+        
+        # Add some strategy insights
+        if n_stops == 1:
+            st.write("💡 Classic one-stop strategy predicted.")
+        elif n_stops == 2:
+            st.write("💡 Two-stop strategy predicted - watch for undercut opportunities.")
+        else:
+            st.write("💡 Aggressive multi-stop strategy predicted - high tire degradation expected.")
+
 def main():
-    # Initialize Git LFS
-    if not setup_git_lfs():
-        st.error("Failed to initialize Git LFS. Some features may not work correctly.")
-
-    # Initialize FastF1 cache
-    cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    fastf1.Cache.enable_cache(str(cache_dir))
-
     # Title and description
     st.title("🏎️ PitGenius: F1 Pit Stop Predictions")
     st.markdown("""
-    Predict pit stop strategies for Formula 1 races using machine learning.
-    Select a race and driver to see predicted pit stops and tire compounds.
+    Welcome to PitGenius! This app predicts Formula 1 pit stop strategies using machine learning.
+    Select a race and driver to see predicted pit stop windows and strategy insights.
     """)
     
-    # Load model
-    model = load_trained_model()
-    if model is None:
-        st.warning("Please train the model before using the prediction interface.")
-        st.stop()
-    
-    # Get available races for 2024
-    schedule = fastf1.get_event_schedule(2024)
-    races = schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
-    
-    # Race selection
-    st.sidebar.header("Race Selection")
-    selected_race = st.sidebar.selectbox(
-        "Select Race",
-        races
-    )
-    
-    # Driver selection with team grouping
-    st.sidebar.header("Driver Selection")
-    
-    # Group drivers by team
-    teams = {}
-    for driver in drivers_2024:
-        if driver['team'] not in teams:
-            teams[driver['team']] = []
-        teams[driver['team']].append(driver)
-    
-    # Create team selection first
-    selected_team = st.sidebar.selectbox(
-        "Select Team",
-        options=list(teams.keys())
-    )
-    
-    # Then filter drivers by selected team
-    team_drivers = teams[selected_team]
-    selected_driver = st.sidebar.selectbox(
-        "Select Driver",
-        options=[d['code'] for d in team_drivers],
-        format_func=lambda x: next(d['name'] for d in team_drivers if d['code'] == x)
-    )
-    
-    if st.sidebar.button('Analyze Race Strategy'):
-        try:
-            # Get race data
-            from src.models.predict_pit_stops import get_race_data, prepare_features, predict_race_pit_stops
-            
-            with st.spinner("Getting race data..."):
-                race_data = get_race_data(2024, selected_race)
-            
-            # Prepare features
-            with st.spinner("Preparing features..."):
-                features = prepare_features(race_data)
-            
-            # Make predictions
-            with st.spinner("Making predictions..."):
-                predictions = predict_race_pit_stops(model, features)
-            
-            if not predictions.empty:
-                # Create visualization
-                fig = plot_driver_prediction(predictions, selected_driver)
+    try:
+        # Load the model
+        seasons = [2022, 2023]
+        model = load_model(seasons)
+        
+        # Race selection
+        st.sidebar.header('Race Selection')
+        year = st.sidebar.selectbox('Select Year', [2024])
+        gp_name = st.sidebar.selectbox('Select Grand Prix', ['Bahrain'])
+        
+        # Team selection
+        st.header('Driver Selection')
+        teams = sorted(list(set(driver['team'] for driver in drivers_2024)))
+        selected_team = st.selectbox('Select Team', teams)
+        
+        # Filter drivers by selected team
+        team_drivers = [driver for driver in drivers_2024 if driver['team'] == selected_team]
+        driver_names = [f"{driver['name']} ({driver['code']})" for driver in team_drivers]
+        selected_driver_name = st.selectbox('Select Driver', driver_names)
+        
+        # Extract driver code from selection
+        selected_driver_code = selected_driver_name.split('(')[1].split(')')[0]
+        
+        if st.button('Predict Pit Stops'):
+            with st.spinner('Getting race data...'):
+                # Get race data
+                race_data = get_race_data(year, gp_name)
                 
-                # Display plot
-                st.pyplot(fig)
+                # Filter for selected driver
+                driver_data = race_data[race_data['Driver'] == selected_driver_code].copy()
                 
-                # Display strategy summary
-                st.subheader("Predicted Strategy Summary")
-                driver_preds = predictions[
-                    (predictions['Driver'] == selected_driver) & 
-                    predictions['PredictedPitStop']
-                ]
-                
-                if not driver_preds.empty:
-                    st.write(f"Number of predicted pit stops: {len(driver_preds)}")
+                if not driver_data.empty:
+                    # Prepare features
+                    features = prepare_features(driver_data)
                     
-                    # Create strategy table
-                    strategy_data = []
-                    prev_compound = predictions[predictions['Driver'] == selected_driver].iloc[0]['CurrentCompound']
-                    
-                    for i, (_, stop) in enumerate(driver_preds.iterrows(), 1):
-                        next_compound = predictions[
-                            (predictions['Driver'] == selected_driver) & 
-                            (predictions['LapNumber'] > stop['LapNumber'])
-                        ].iloc[0]['CurrentCompound']
+                    if not features.empty:
+                        # Make predictions
+                        predictions = predict_race_pit_stops(model, features)
                         
-                        strategy_data.append({
-                            'Stop': f"Pit Stop {i}",
-                            'Lap': int(stop['LapNumber']),
-                            'From': prev_compound,
-                            'To': next_compound,
-                            'Probability': f"{stop['PitProbability']:.2%}"
-                        })
-                        prev_compound = next_compound
-                    
-                    if strategy_data:
-                        st.table(pd.DataFrame(strategy_data))
+                        # Display results
+                        st.subheader('Pit Stop Predictions')
+                        
+                        # Create visualization
+                        fig = plot_driver_prediction(predictions, selected_driver_code)
+                        st.pyplot(fig)
+                        
+                        # Display strategy insights
+                        display_strategy_insights(predictions, selected_driver_name)
+                    else:
+                        st.error("Could not prepare features for prediction. Please try another driver or race.")
                 else:
-                    st.write("No pit stops predicted for this driver.")
-            else:
-                st.error("Error making predictions. Please try again.")
-                
-        except Exception as e:
-            st.error(f"Error analyzing race strategy: {str(e)}")
-            logger.error(f"Error in Streamlit app: {str(e)}")
+                    st.error(f"No data available for {selected_driver_name} in this race.")
+                    
+    except Exception as e:
+        logger.error(f"Error in Streamlit app: {str(e)}")
+        st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main() 
