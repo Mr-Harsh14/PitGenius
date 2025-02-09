@@ -72,21 +72,21 @@ data/external/
 predictions/*/
 reports/figures/*/
 
-# Ignore all model directories except specific files
+# Model files and directories
 models/*
-!models/random_forest/
+!models/random_forest
 models/random_forest/*
 !models/random_forest/rf_model_2022-2023.joblib
+!models/random_forest/rf_metrics_2022-2023.csv
+!models/random_forest/rf_feature_importance_2022-2023.csv
 
-# Data files
+# Data files (except specific model files above)
 *.csv
 *.json
 *.pkl
 *.ff1pkl
 *.h5
 *.parquet
-
-# Model files (but allow specific exceptions)
 *.joblib
 *.h5
 *.keras
