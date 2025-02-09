@@ -263,18 +263,9 @@ def main():
             with st.spinner("Getting race data..."):
                 race_data = get_race_data(2024, selected_race)
             
-            # Set up data directories
-            data_dir = Path(project_root) / 'data'
-            processed_data_dir = data_dir / 'processed'
-            interim_data_dir = data_dir / 'interim'
-            
-            # Create directories if they don't exist
-            processed_data_dir.mkdir(parents=True, exist_ok=True)
-            interim_data_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Prepare features with proper data directories
+            # Prepare features
             with st.spinner("Preparing features..."):
-                features = prepare_features(race_data, processed_data_dir=processed_data_dir, interim_data_dir=interim_data_dir)
+                features = prepare_features(race_data)
             
             # Make predictions
             with st.spinner("Making predictions..."):
