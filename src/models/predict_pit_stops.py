@@ -83,18 +83,14 @@ def prepare_features(race_data: pd.DataFrame) -> pd.DataFrame:
     processed_data_dir.mkdir(parents=True, exist_ok=True)
     interim_data_dir.mkdir(parents=True, exist_ok=True)
     
-    # Initialize feature engineer and data cleaner
+    # Initialize feature engineer with proper directories
     engineer = F1FeatureEngineer(
         processed_data_dir=str(processed_data_dir),
         interim_data_dir=str(interim_data_dir)
     )
     
-    cleaner = F1DataCleaner(
-        processed_data_dir=str(processed_data_dir),
-        interim_data_dir=str(interim_data_dir)
-    )
-    
     # Clean data first
+    cleaner = F1DataCleaner(str(processed_data_dir), str(interim_data_dir))
     cleaned_data = cleaner.clean_race_data(race_data)
     
     # Engineer features - apply_feature_engineering returns (transformed_df, pca_df)
@@ -118,8 +114,8 @@ def prepare_features(race_data: pd.DataFrame) -> pd.DataFrame:
         if feature in transformed_df.columns:
             features[feature] = transformed_df[feature]
         else:
-            logger.warning(f"Feature {feature} not found in engineered features, using default value 0")
             features[feature] = 0  # Default value for missing features
+            logger.warning(f"Feature {feature} not found in engineered features, using default value 0")
     
     return features
 
