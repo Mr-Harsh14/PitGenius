@@ -8,14 +8,12 @@ import sys
 import os
 import logging
 from datetime import datetime
+import subprocess
 
 # Add project root to path
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
-
-from src.models.train_random_forest import load_model
-from src.models.predict_pit_stops import get_race_data, prepare_features, predict_race_pit_stops
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +21,34 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def setup_git_lfs():
+    """Initialize Git LFS and pull the model file."""
+    try:
+        # Initialize Git LFS
+        subprocess.run(['git', 'lfs', 'install'], check=True)
+        # Pull LFS files
+        subprocess.run(['git', 'lfs', 'pull'], check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error setting up Git LFS: {str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error setting up Git LFS: {str(e)}")
+        return False
+
+# Initialize Git LFS
+if not setup_git_lfs():
+    st.error("Failed to initialize Git LFS. Some features may not work correctly.")
+
+# Now import the model-related modules
+try:
+    from src.models.train_random_forest import load_model
+    from src.models.predict_pit_stops import get_race_data, prepare_features, predict_race_pit_stops
+except ImportError as e:
+    st.error(f"Error importing required modules: {str(e)}")
+    st.info("Please make sure all dependencies are installed correctly.")
+    st.stop()
 
 # Initialize FastF1 cache
 cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
@@ -48,6 +74,12 @@ def check_model_exists():
         4. Push the trained model to the repository
         """)
         return False
+        
+    # Check file size to ensure it's not corrupted
+    if model_file.stat().st_size < 1000000:  # Model should be at least 1MB
+        st.error("Model file appears to be corrupted. Please retrain the model.")
+        return False
+        
     return True
 
 @st.cache_resource
