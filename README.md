@@ -1,60 +1,93 @@
-# F1 Strategy Optimizer
+# PitGenius: F1 Race Strategy Optimizer
 
-A comprehensive system for Formula 1 race strategy optimization using machine learning techniques.
+A comprehensive system for providing pre-race strategy recommendations for Formula 1 teams, leveraging machine learning techniques to optimize race strategies and compare predicted strategies with actual race outcomes.
 
-## Overview
+## Features
 
-This project aims to provide pre-race strategy recommendations for Formula 1 teams, along with the ability to compare predicted strategies to actual race outcomes. The system leverages machine learning to optimize race strategies based on various factors while accounting for driver/team preferences and enabling scenario simulations.
+- **Pre-Race Strategy Recommendation**
+  - Input pre-race conditions (qualifying positions, tire allocations, weather forecast)
+  - ML-powered strategy optimization
+  - Detailed pit stop and tire choice recommendations
 
-## Key Features
-
-- Pre-Race Strategy Recommendation
-- Driver/Team Preference Modeling
-- Scenario Simulation and Comparison
-- Performance Metrics and Reporting
-
-## Technical Stack
-
-- **Data Collection**: FastF1 Python library, Ergast API
-- **Machine Learning**: Scikit-learn, TensorFlow/PyTorch, XGBoost
-- **Frontend**: Streamlit
-- **Visualization**: Plotly/Dash, Matplotlib
-- **Core Technologies**: Python, Pandas, NumPy
+- **Performance Metrics and Reporting**
+  - Strategy quality evaluation
+  - Detailed performance reports
+  - Interactive visualizations
 
 ## Project Structure
 
 ```
-f1_strategy_optimizer/
-├── src/               # Source code
-├── app/               # Web application
-├── data/              # Data collection and processing
-├── tests/             # Unit and integration tests
-├── docs/              # Documentation
-└── config/            # Configuration files
+PitGenius/
+├── data/                     # Data files
+├── models/                   # Saved model files
+├── notebooks/               # Jupyter notebooks
+├── src/                    # Source code
+├── tests/                  # Test files
+├── configs/                # Configuration files
+├── docs/                   # Documentation
+└── scripts/                # Utility scripts
 ```
 
-## Setup
+## Installation
 
-1. Create a conda environment:
-   ```bash
-   conda env create -f env.yml
-   ```
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/PitGenius.git
+cd PitGenius
+```
 
-2. Install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-3. Run the application:
-   ```bash
-   streamlit run app/main.py
-   ```
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+1. Set up your environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your configurations
+```
+
+2. Run the main application:
+```bash
+python main.py
+```
+
+## Development
+
+- Data processing scripts are in `src/data/`
+- Model development code is in `src/models/`
+- Visualization tools are in `src/visualization/`
+
+## Testing
+
+Run tests using:
+```bash
+python -m pytest tests/
+```
 
 ## Documentation
 
-- User Guide: See `docs/user_guide.md`
-- Technical Documentation: See `docs/technical_documentation.md`
+- API Reference: `docs/api_reference.md`
+- Data Dictionary: `docs/data_dictionary.md`
+- Model Architecture: `docs/model_architecture.md`
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contributors
+
+- Your Name (@yourusername)
+
+## Acknowledgments
+
+- FastF1 library
+- Formula 1 for providing data access

@@ -63,6 +63,15 @@ coverage.xml
 # FastF1 specific
 cache/
 *.cache
+data/raw/fastf1_cache/
+
+# Project specific directories
+data/interim/
+data/processed/
+data/external/
+models/*/
+predictions/*/
+reports/figures/*/
 
 # Data files
 *.csv
@@ -72,11 +81,24 @@ cache/
 *.h5
 *.parquet
 
+# Model files
+*.joblib
+*.h5
+*.keras
+*.pt
+*.pth
+*.onnx
+
 # Exceptions for data that should be tracked
 !requirements.txt
 !setup.py
 !src/data/processed/README.md
 !src/data/raw/README.md
+!src/data/interim/README.md
+!src/data/external/README.md
+!models/README.md
+!predictions/README.md
+!reports/figures/README.md
 
 # OS specific
 .DS_Store

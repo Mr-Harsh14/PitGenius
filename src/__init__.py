@@ -1,0 +1,3 @@
+"""
+PitGenius package initialization.
+"""
