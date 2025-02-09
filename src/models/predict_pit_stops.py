@@ -74,15 +74,31 @@ def prepare_features(race_data: pd.DataFrame) -> pd.DataFrame:
     """
     logger.info("Preparing features for prediction")
     
-    # Initialize feature engineer
-    engineer = F1FeatureEngineer()
+    # Set up data directories
+    data_dir = Path(project_root) / 'data'
+    processed_data_dir = data_dir / 'processed'
+    interim_data_dir = data_dir / 'interim'
+    
+    # Create directories if they don't exist
+    processed_data_dir.mkdir(parents=True, exist_ok=True)
+    interim_data_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize feature engineer with proper directories
+    engineer = F1FeatureEngineer(
+        processed_data_dir=str(processed_data_dir),
+        interim_data_dir=str(interim_data_dir)
+    )
     
     # Clean data first
-    cleaner = F1DataCleaner()
+    cleaner = F1DataCleaner(str(processed_data_dir), str(interim_data_dir))
     cleaned_data = cleaner.clean_race_data(race_data)
     
-    # Engineer features
-    features = engineer.create_features(cleaned_data)
+    # Engineer features - apply_feature_engineering returns (transformed_df, pca_df)
+    transformed_df, _ = engineer.apply_feature_engineering(cleaned_data)
+    
+    if transformed_df.empty:
+        logger.error("Feature engineering produced empty DataFrame")
+        return pd.DataFrame()
     
     # Select only the features used by the model
     model_features = [
@@ -93,11 +109,15 @@ def prepare_features(race_data: pd.DataFrame) -> pd.DataFrame:
     ]
     
     # Ensure all required features exist
+    features = pd.DataFrame(index=transformed_df.index)
     for feature in model_features:
-        if feature not in features.columns:
+        if feature in transformed_df.columns:
+            features[feature] = transformed_df[feature]
+        else:
             features[feature] = 0  # Default value for missing features
+            logger.warning(f"Feature {feature} not found in engineered features, using default value 0")
     
-    return features[model_features]
+    return features
 
 def predict_race_pit_stops(model: 'RandomForestModel', features: pd.DataFrame) -> pd.DataFrame:
     """
