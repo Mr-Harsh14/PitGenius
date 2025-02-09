@@ -68,28 +68,6 @@ def setup_git_lfs():
         logger.error(f"Unexpected error setting up Git LFS: {str(e)}")
         return False
 
-# Initialize Git LFS
-if not setup_git_lfs():
-    st.error("Failed to initialize Git LFS. Some features may not work correctly.")
-
-# Now import the model-related modules
-try:
-    from src.models.train_random_forest import load_model
-    from src.models.predict_pit_stops import get_race_data, prepare_features, predict_race_pit_stops
-except ImportError as e:
-    st.error(f"Error importing required modules: {str(e)}")
-    st.info("Please make sure all dependencies are installed correctly.")
-    st.stop()
-
-# Initialize FastF1 cache
-cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
-cache_dir.mkdir(parents=True, exist_ok=True)
-fastf1.Cache.enable_cache(str(cache_dir))
-
-# App title and description
-st.title('PitGenius: F1 Pit Stop Predictions')
-st.write('Predict pit stop strategies for Formula 1 races using machine learning. Select a race and driver to see predicted pit stops and tire compounds.')
-
 def check_model_exists():
     """Check if the model file exists and return appropriate message."""
     model_dir = Path(project_root) / 'models' / 'random_forest'
@@ -120,6 +98,7 @@ def load_trained_model():
         return None
         
     try:
+        from src.models.train_random_forest import load_model
         seasons = [2022, 2023]
         model = load_model(seasons)
         st.success("Model loaded successfully!")
@@ -128,72 +107,6 @@ def load_trained_model():
         st.error(f"Error loading model: {str(e)}")
         logger.error(f"Error loading model: {str(e)}")
         return None
-
-# Load model
-model = load_trained_model()
-
-if model is None:
-    st.warning("Please train the model before using the prediction interface.")
-    st.stop()
-
-# Race selection
-st.header('Race Selection')
-race = st.selectbox(
-    'Select Race',
-    ['Bahrain Grand Prix', 'Saudi Arabian Grand Prix', 'Australian Grand Prix',
-     'Azerbaijan Grand Prix', 'Miami Grand Prix', 'Monaco Grand Prix',
-     'Spanish Grand Prix', 'Canadian Grand Prix', 'Austrian Grand Prix',
-     'British Grand Prix', 'Hungarian Grand Prix', 'Belgian Grand Prix',
-     'Dutch Grand Prix', 'Italian Grand Prix', 'Singapore Grand Prix',
-     'Japanese Grand Prix', 'Qatar Grand Prix', 'United States Grand Prix',
-     'Mexico City Grand Prix', 'São Paulo Grand Prix', 'Las Vegas Grand Prix',
-     'Abu Dhabi Grand Prix']
-)
-
-# Team selection
-st.header('Driver Selection')
-teams = sorted(list(set(driver['team'] for driver in drivers_2024)))
-selected_team = st.selectbox('Select Team', teams)
-
-# Filter drivers by selected team
-team_drivers = [driver for driver in drivers_2024 if driver['team'] == selected_team]
-selected_driver = st.selectbox(
-    'Select Driver',
-    [f"{driver['name']} ({driver['code']})" for driver in team_drivers]
-)
-
-if st.button('Analyze Race Strategy'):
-    try:
-        # Get race data
-        race_data = get_race_data(2024, race)
-        
-        # Prepare features
-        features = prepare_features(race_data)
-        
-        # Make predictions
-        predictions = predict_race_pit_stops(model, features)
-        
-        # Display results
-        st.header('Pit Stop Predictions')
-        st.write(f"Analyzing {selected_driver}'s strategy for {race}")
-        
-        # Create visualization
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(predictions['lap'], predictions['pit_probability'])
-        ax.set_title(f'Pit Stop Probability - {selected_driver} at {race}')
-        ax.set_xlabel('Lap')
-        ax.set_ylabel('Probability')
-        ax.grid(True)
-        
-        st.pyplot(fig)
-        
-        # Show detailed predictions
-        st.subheader('Detailed Analysis')
-        st.dataframe(predictions)
-        
-    except Exception as e:
-        st.error(f"Error analyzing race strategy: {str(e)}")
-        logger.error(f"Error analyzing race strategy: {str(e)}")
 
 def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     """Create a visualization of predicted pit stops for a driver."""
@@ -285,6 +198,15 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     return fig
 
 def main():
+    # Initialize Git LFS
+    if not setup_git_lfs():
+        st.error("Failed to initialize Git LFS. Some features may not work correctly.")
+
+    # Initialize FastF1 cache
+    cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fastf1.Cache.enable_cache(str(cache_dir))
+
     # Title and description
     st.title("🏎️ PitGenius: F1 Pit Stop Predictions")
     st.markdown("""
@@ -292,14 +214,18 @@ def main():
     Select a race and driver to see predicted pit stops and tire compounds.
     """)
     
-    # Sidebar for inputs
-    st.sidebar.header("Race Selection")
+    # Load model
+    model = load_trained_model()
+    if model is None:
+        st.warning("Please train the model before using the prediction interface.")
+        st.stop()
     
     # Get available races for 2024
     schedule = fastf1.get_event_schedule(2024)
     races = schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
     
     # Race selection
+    st.sidebar.header("Race Selection")
     selected_race = st.sidebar.selectbox(
         "Select Race",
         races
@@ -329,20 +255,30 @@ def main():
         format_func=lambda x: next(d['name'] for d in team_drivers if d['code'] == x)
     )
     
-    try:
-        # Load model and make predictions
-        with st.spinner("Making predictions..."):
-            # Load trained model
-            model = load_model([2022, 2023])
-            
+    if st.sidebar.button('Analyze Race Strategy'):
+        try:
             # Get race data
-            race_data = get_race_data(2024, selected_race)
+            from src.models.predict_pit_stops import get_race_data, prepare_features, predict_race_pit_stops
             
-            # Prepare features
-            features = prepare_features(race_data)
+            with st.spinner("Getting race data..."):
+                race_data = get_race_data(2024, selected_race)
+            
+            # Set up data directories
+            data_dir = Path(project_root) / 'data'
+            processed_data_dir = data_dir / 'processed'
+            interim_data_dir = data_dir / 'interim'
+            
+            # Create directories if they don't exist
+            processed_data_dir.mkdir(parents=True, exist_ok=True)
+            interim_data_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Prepare features with proper data directories
+            with st.spinner("Preparing features..."):
+                features = prepare_features(race_data, processed_data_dir=processed_data_dir, interim_data_dir=interim_data_dir)
             
             # Make predictions
-            predictions = predict_race_pit_stops(model, features)
+            with st.spinner("Making predictions..."):
+                predictions = predict_race_pit_stops(model, features)
             
             if not predictions.empty:
                 # Create visualization
@@ -387,9 +323,9 @@ def main():
             else:
                 st.error("Error making predictions. Please try again.")
                 
-    except Exception as e:
-        st.error(f"Error loading race data: {str(e)}")
-        logger.error(f"Error in Streamlit app: {str(e)}")
+        except Exception as e:
+            st.error(f"Error analyzing race strategy: {str(e)}")
+            logger.error(f"Error in Streamlit app: {str(e)}")
 
 if __name__ == "__main__":
     main() 
