@@ -69,7 +69,8 @@ data/raw/fastf1_cache/
 data/interim/
 data/processed/
 data/external/
-models/*/
+models/*
+!models/random_forest/
 predictions/*/
 reports/figures/*/
 
@@ -99,6 +100,9 @@ reports/figures/*/
 !models/README.md
 !predictions/README.md
 !reports/figures/README.md
+!models/random_forest/rf_model_2022-2023.joblib
+!models/random_forest/rf_metrics_2022-2023.csv
+!models/random_forest/rf_feature_importance_2022-2023.csv
 
 # OS specific
 .DS_Store

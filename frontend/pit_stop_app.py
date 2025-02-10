@@ -10,7 +10,11 @@ import logging
 from datetime import datetime
 
 # Add project root to path
-project_root = str(Path(__file__).parent.parent)
+if os.environ.get('STREAMLIT_SHARING'):
+    project_root = '/mount/src/pitgenius'
+else:
+    project_root = str(Path(__file__).parent.parent)
+
 if project_root not in sys.path:
     sys.path.append(project_root)
 
