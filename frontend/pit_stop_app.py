@@ -47,8 +47,8 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     # Set style to default (light) theme
     plt.style.use('default')
     
-    # Create figure with two subplots
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[3, 1], gridspec_kw={'hspace': 0.1})
+    # Create figure with two subplots - even smaller size
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 3), height_ratios=[2, 1], gridspec_kw={'hspace': 0.05})
     
     # Plot pit stop probability on top subplot
     ax1.plot(driver_predictions['LapNumber'], driver_predictions['PitProbability'], 
@@ -63,8 +63,8 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     for pred_lap in predicted_stops:
         ax1.axvline(x=pred_lap, color='#00CC00', linestyle='--', alpha=0.5, linewidth=2)
     
-    # Add legend to top subplot
-    ax1.legend(loc='upper right', framealpha=0.9)
+    # Add legend to top subplot with smaller font and better positioning
+    ax1.legend(loc='upper right', framealpha=0.9, fontsize=8, bbox_to_anchor=(1.0, 0.95))
     
     # Customize top subplot
     ax1.set_title(f'Pit Stop Predictions - {driver_code}', pad=20)
@@ -125,18 +125,19 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     ax2.set_yticks([])
     ax2.set_xlim(0, max(driver_predictions['LapNumber']) + 1)
     
-    # Add compound legend
+    # Add compound legend with better formatting
     legend_elements = [plt.Rectangle((0, 0), 1, 1, fc=color, alpha=0.8, label=compound)
                       for compound, color in compounds.items()]
-    ax2.legend(handles=legend_elements, loc='upper right', ncol=5,
+    ax2.legend(handles=legend_elements, loc='upper right', ncol=3,
+              fontsize=7, bbox_to_anchor=(1.0, 1.4),
               facecolor='#1E1E1E', edgecolor='gray')
     
     # Set figure background to white
     fig.patch.set_facecolor('white')
     ax1.set_facecolor('white')
     
-    # Adjust layout
-    plt.tight_layout()
+    # Adjust layout with minimal margins
+    plt.tight_layout(pad=1.0)
     
     return fig
 
@@ -241,19 +242,25 @@ def plot_historical_strategies(strategies_df: pd.DataFrame, race_name: str, team
         st.warning(f"No historical data found for {team} at {race_name}")
         return
     
-    # Set style
-    plt.style.use('dark_background')
+    # Set style to light theme
+    plt.style.use('default')
     
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, len(strategies_df) * 2), 
+    # Even smaller figure size
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, max(3, len(strategies_df))), 
                                   gridspec_kw={'height_ratios': [3, 1]}, layout='constrained')
     
     compounds_colors = {
         'SOFT': '#FF1E1E',     # Bright red for soft
         'MEDIUM': '#FFF200',    # Bright yellow for medium
-        'HARD': '#FFFFFF',      # White for hard
+        'HARD': '#808080',      # Gray for hard (better contrast on white)
         'INTERMEDIATE': '#39B54A',  # Green for intermediate
         'WET': '#00A0DC'        # Blue for wet
     }
+    
+    # Set white background
+    fig.patch.set_facecolor('white')
+    ax1.set_facecolor('white')
+    ax2.set_facecolor('white')
     
     y_positions = []
     y_labels = []
@@ -289,24 +296,25 @@ def plot_historical_strategies(strategies_df: pd.DataFrame, race_name: str, team
             # Add vertical line for pit stop
             ax1.axvline(x=pit_lap, ymin=(y_pos-0.4)/len(strategies_df)/2,
                        ymax=(y_pos+0.4)/len(strategies_df)/2,
-                       color='white', linestyle='--', alpha=0.8, linewidth=2)
+                       color='black', linestyle='--', alpha=0.8, linewidth=2)
             
             # Add small marker at pit stop point
             ax1.plot([pit_lap], [y_pos], 'wo', markersize=6, alpha=0.8)
     
-    # Customize strategy timeline
+    # Customize strategy timeline with dark text
     ax1.set_yticks(y_positions)
-    ax1.set_yticklabels(y_labels, color='white')
-    ax1.set_xlabel('Lap Number', color='white', fontsize=10)
+    ax1.set_yticklabels(y_labels, color='black')
+    ax1.set_xlabel('Lap Number', color='black', fontsize=10)
     ax1.set_title(f'Historical Pit Stop Strategies - {team} at {race_name}',
-                  color='white', fontsize=12, pad=20)
+                  color='black', fontsize=12, pad=20)
     ax1.grid(True, alpha=0.2, color='gray')
     
-    # Add compound legend with enhanced visibility
+    # Add compound legend with enhanced visibility and better positioning
     legend_elements = [plt.Rectangle((0,0),1,1, facecolor=color, alpha=0.8, label=compound)
                       for compound, color in compounds_colors.items()]
-    ax1.legend(handles=legend_elements, loc='upper right', ncol=5,
-              facecolor='#1E1E1E', edgecolor='gray')
+    ax1.legend(handles=legend_elements, loc='upper right', ncol=3,
+              fontsize=7, bbox_to_anchor=(1.0, 1.1),
+              facecolor='white', edgecolor='gray')
     
     # Plot lap time comparison
     bar_width = 0.8
@@ -319,23 +327,18 @@ def plot_historical_strategies(strategies_df: pd.DataFrame, race_name: str, team
                    alpha=0.8)
             # Add time label
             ax2.text(i, lap_time_seconds + 0.2, f"{lap_time_seconds:.1f}s",
-                    ha='center', va='bottom', color='white', fontsize=9)
+                    ha='center', va='bottom', color='black', fontsize=9)
     
-    # Customize lap time comparison
+    # Customize lap time comparison with dark text
     ax2.set_xticks(range(len(strategies_df)))
     ax2.set_xticklabels([f"{s['Year']} - {s['Driver']}" for _, s in strategies_df.iterrows()],
-                        rotation=45, ha='right', color='white')
-    ax2.set_ylabel('Fastest Lap Time (s)', color='white', fontsize=10)
-    ax2.set_title('Fastest Lap Comparison', color='white', fontsize=12, pad=20)
+                        rotation=45, ha='right', color='black')
+    ax2.set_ylabel('Fastest Lap Time (s)', color='black', fontsize=10)
+    ax2.set_title('Fastest Lap Comparison', color='black', fontsize=12, pad=20)
     ax2.grid(True, alpha=0.2, color='gray')
     
     # Set x-axis limits for strategy timeline
     ax1.set_xlim(0, 57)  # Bahrain GP is 57 laps
-    
-    # Add background color to the figure
-    fig.patch.set_facecolor('#0E1117')
-    ax1.set_facecolor('#1E1E1E')
-    ax2.set_facecolor('#1E1E1E')
     
     # Adjust layout
     plt.tight_layout()
@@ -433,45 +436,48 @@ def main():
                 predictions = predict_race_pit_stops(model, features)
                 
                 if not predictions.empty:
-                    # Create visualization
-                    fig = plot_driver_prediction(predictions, selected_driver)
+                    # Create two columns with different widths
+                    col1, col2 = st.columns([2, 1])
                     
-                    # Display plot
-                    st.pyplot(fig)
+                    with col1:
+                        # Create visualization
+                        fig = plot_driver_prediction(predictions, selected_driver)
+                        st.pyplot(fig, use_container_width=True)
                     
-                    # Display strategy summary
-                    st.subheader("Predicted Strategy Summary")
-                    driver_preds = predictions[
-                        (predictions['Driver'] == selected_driver) & 
-                        predictions['PredictedPitStop']
-                    ]
-                    
-                    if not driver_preds.empty:
-                        st.write(f"Number of predicted pit stops: {len(driver_preds)}")
+                    with col2:
+                        # Display strategy summary
+                        st.subheader("Predicted Strategy Summary")
+                        driver_preds = predictions[
+                            (predictions['Driver'] == selected_driver) & 
+                            predictions['PredictedPitStop']
+                        ]
                         
-                        # Create strategy table
-                        strategy_data = []
-                        prev_compound = predictions[predictions['Driver'] == selected_driver].iloc[0]['CurrentCompound']
-                        
-                        for i, (_, stop) in enumerate(driver_preds.iterrows(), 1):
-                            next_compound = predictions[
-                                (predictions['Driver'] == selected_driver) & 
-                                (predictions['LapNumber'] > stop['LapNumber'])
-                            ].iloc[0]['CurrentCompound']
+                        if not driver_preds.empty:
+                            st.write(f"Number of predicted pit stops: {len(driver_preds)}")
                             
-                            strategy_data.append({
-                                'Stop': f"Pit Stop {i}",
-                                'Lap': int(stop['LapNumber']),
-                                'From': prev_compound,
-                                'To': next_compound,
-                                'Probability': f"{stop['PitProbability']:.2%}"
-                            })
-                            prev_compound = next_compound
-                        
-                        if strategy_data:
-                            st.table(pd.DataFrame(strategy_data))
-                    else:
-                        st.write("No pit stops predicted for this driver.")
+                            # Create strategy table
+                            strategy_data = []
+                            prev_compound = predictions[predictions['Driver'] == selected_driver].iloc[0]['CurrentCompound']
+                            
+                            for i, (_, stop) in enumerate(driver_preds.iterrows(), 1):
+                                next_compound = predictions[
+                                    (predictions['Driver'] == selected_driver) & 
+                                    (predictions['LapNumber'] > stop['LapNumber'])
+                                ].iloc[0]['CurrentCompound']
+                                
+                                strategy_data.append({
+                                    'Stop': f"Pit Stop {i}",
+                                    'Lap': int(stop['LapNumber']),
+                                    'From': prev_compound,
+                                    'To': next_compound,
+                                    'Probability': f"{stop['PitProbability']:.2%}"
+                                })
+                                prev_compound = next_compound
+                            
+                            if strategy_data:
+                                st.table(pd.DataFrame(strategy_data))
+                        else:
+                            st.write("No pit stops predicted for this driver.")
                 else:
                     st.error("Error making predictions. Please try again.")
                     
@@ -486,29 +492,34 @@ def main():
                 historical_data = get_historical_strategy(selected_race, selected_team)
                 
                 if not historical_data.empty:
-                    # Plot historical strategies
-                    fig = plot_historical_strategies(historical_data, selected_race, selected_team)
-                    st.pyplot(fig)
+                    # Create two columns
+                    col1, col2 = st.columns([2, 1])
                     
-                    # Display summary statistics
-                    st.subheader("Historical Strategy Summary")
+                    with col1:
+                        # Plot historical strategies
+                        fig = plot_historical_strategies(historical_data, selected_race, selected_team)
+                        st.pyplot(fig, use_container_width=True)
                     
-                    avg_stops = historical_data['NumStops'].mean()
-                    st.write(f"Average number of pit stops: {avg_stops:.1f}")
-                    
-                    # Most common compounds
-                    all_compounds = [compound for compounds in historical_data['Compounds'] for compound in compounds]
-                    if all_compounds:
-                        compound_counts = pd.Series(all_compounds).value_counts()
-                        st.write("Most used tire compounds:")
-                        for compound, count in compound_counts.items():
-                            st.write(f"- {compound}: {count} times")
-                    
-                    # Display detailed data
-                    st.subheader("Detailed Historical Data")
-                    display_data = historical_data[['Year', 'Driver', 'NumStops', 'Result']].copy()
-                    display_data = display_data.sort_values(['Year', 'Result'])
-                    st.dataframe(display_data)
+                    with col2:
+                        # Display summary statistics
+                        st.subheader("Historical Strategy Summary")
+                        
+                        avg_stops = historical_data['NumStops'].mean()
+                        st.write(f"Average number of pit stops: {avg_stops:.1f}")
+                        
+                        # Most common compounds
+                        all_compounds = [compound for compounds in historical_data['Compounds'] for compound in compounds]
+                        if all_compounds:
+                            compound_counts = pd.Series(all_compounds).value_counts()
+                            st.write("Most used tire compounds:")
+                            for compound, count in compound_counts.items():
+                                st.write(f"- {compound}: {count} times")
+                        
+                        # Display detailed data
+                        st.subheader("Detailed Historical Data")
+                        display_data = historical_data[['Year', 'Driver', 'NumStops', 'Result']].copy()
+                        display_data = display_data.sort_values(['Year', 'Result'])
+                        st.dataframe(display_data)
                 else:
                     st.warning(f"No historical data found for {selected_team} at {selected_race}")
                 
