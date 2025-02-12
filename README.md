@@ -79,15 +79,7 @@ python -m pytest tests/
 - Data Dictionary: `docs/data_dictionary.md`
 - Model Architecture: `docs/model_architecture.md`
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Contributors
-
-- Your Name (@yourusername)
-
 ## Acknowledgments
 
 - FastF1 library
-- Formula 1 for providing data access
+- Ergast API
