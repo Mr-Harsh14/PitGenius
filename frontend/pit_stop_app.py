@@ -436,13 +436,26 @@ def main():
                 predictions = predict_race_pit_stops(model, features)
                 
                 if not predictions.empty:
-                    # Create two columns with different widths
+                    # Create two columns with different widths and add max-width constraint
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
-                        # Create visualization
-                        fig = plot_driver_prediction(predictions, selected_driver)
-                        st.pyplot(fig, use_container_width=True)
+                        # Add a container with max width
+                        with st.container():
+                            st.markdown(
+                                """
+                                <style>
+                                .plot-container {
+                                    max-width: 800px;
+                                    margin: auto;
+                                }
+                                </style>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                            # Create visualization
+                            fig = plot_driver_prediction(predictions, selected_driver)
+                            st.pyplot(fig, use_container_width=True)
                     
                     with col2:
                         # Display strategy summary
@@ -492,13 +505,26 @@ def main():
                 historical_data = get_historical_strategy(selected_race, selected_team)
                 
                 if not historical_data.empty:
-                    # Create two columns
+                    # Create two columns with max-width constraint
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
-                        # Plot historical strategies
-                        fig = plot_historical_strategies(historical_data, selected_race, selected_team)
-                        st.pyplot(fig, use_container_width=True)
+                        # Add a container with max width
+                        with st.container():
+                            st.markdown(
+                                """
+                                <style>
+                                .plot-container {
+                                    max-width: 800px;
+                                    margin: auto;
+                                }
+                                </style>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                            # Plot historical strategies
+                            fig = plot_historical_strategies(historical_data, selected_race, selected_team)
+                            st.pyplot(fig, use_container_width=True)
                     
                     with col2:
                         # Display summary statistics
