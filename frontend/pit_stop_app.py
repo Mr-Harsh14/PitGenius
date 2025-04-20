@@ -15,6 +15,22 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Configure API keys - check both Streamlit secrets and environment variables
+if 'RAPIDAPI_KEY' in os.environ:
+    RAPIDAPI_KEY = os.environ['RAPIDAPI_KEY']
+    RAPIDAPI_HOST = os.environ.get('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
+else:
+    # Try to get from Streamlit secrets
+    try:
+        RAPIDAPI_KEY = st.secrets['RAPIDAPI_KEY']
+        RAPIDAPI_HOST = st.secrets.get('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
+    except Exception as e:
+        logger.warning(f"Could not load API keys from secrets: {e}")
+        RAPIDAPI_KEY = ''
+        RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
+
+RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
+
 # Add project root to path
 if os.environ.get('STREAMLIT_SHARING'):
     project_root = '/mount/src/pitgenius'
@@ -38,11 +54,6 @@ logger = logging.getLogger(__name__)
 cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
 cache_dir.mkdir(parents=True, exist_ok=True)
 fastf1.Cache.enable_cache(str(cache_dir))
-
-# RapidAPI configuration
-RAPIDAPI_KEY = os.getenv('RAPIDAPI_KEY', '')
-RAPIDAPI_HOST = os.getenv('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
-RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
 
 def rapidapi_request(endpoint, params=None):
     """Make a request to the RapidAPI F1 Motorsport Data API."""
@@ -973,13 +984,36 @@ def main():
         if st.sidebar.button("Test API Connection"):
             with st.sidebar:
                 with st.spinner("Testing API connection..."):
+                    # Show environment info for debugging
+                    if st.checkbox("Show environment details"):
+                        st.write("Running in Streamlit Cloud:" if 'STREAMLIT_SHARING' in os.environ else "Running locally")
+                        st.write(f"API key source: {'Streamlit Secrets' if 'RAPIDAPI_KEY' not in os.environ else 'Environment Variable'}")
+                        
+                    # Test the connection
                     test_response = rapidapi_request("news")
                     if test_response:
                         st.success("✅ RapidAPI Connection Successful")
                         st.write(f"Retrieved {len(test_response)} news items")
                     else:
                         st.error("❌ RapidAPI Connection Failed")
-                        st.info("Check your API key in the .env file")
+                        # Show more diagnostic information
+                        st.info("Check API key and rate limits")
+                        
+                        # Test with basic request
+                        try:
+                            simple_response = requests.get(
+                                f"{RAPIDAPI_BASE_URL}/seasons",
+                                headers={
+                                    "X-RapidAPI-Key": RAPIDAPI_KEY,
+                                    "X-RapidAPI-Host": RAPIDAPI_HOST
+                                }
+                            )
+                            st.write(f"Status code: {simple_response.status_code}")
+                            if simple_response.status_code != 200:
+                                st.write(f"Error response: {simple_response.text[:200]}...")
+                        except Exception as e:
+                            st.write(f"Request error: {str(e)}")
+                            
         st.sidebar.success("✅ RapidAPI Key Configured")
         # Show masked API key
         masked_key = RAPIDAPI_KEY[:4] + "..." + RAPIDAPI_KEY[-4:] if len(RAPIDAPI_KEY) > 8 else "***"
