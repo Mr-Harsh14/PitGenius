@@ -8,6 +8,12 @@ import sys
 import os
 import logging
 from datetime import datetime
+import requests
+import json
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add project root to path
 if os.environ.get('STREAMLIT_SHARING'):
@@ -32,6 +38,57 @@ logger = logging.getLogger(__name__)
 cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
 cache_dir.mkdir(parents=True, exist_ok=True)
 fastf1.Cache.enable_cache(str(cache_dir))
+
+# RapidAPI configuration
+RAPIDAPI_KEY = os.getenv('RAPIDAPI_KEY', '')
+RAPIDAPI_HOST = os.getenv('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
+RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
+
+def rapidapi_request(endpoint, params=None):
+    """Make a request to the RapidAPI F1 Motorsport Data API."""
+    if not RAPIDAPI_KEY:
+        logger.warning("No RapidAPI key configured. Set RAPIDAPI_KEY in .env file.")
+        return None
+        
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST
+    }
+    
+    url = f"{RAPIDAPI_BASE_URL}/{endpoint}"
+    logger.info(f"Making API request to: {url}")
+    
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params
+        )
+        
+        # Log the response status
+        logger.info(f"API response status code: {response.status_code}")
+        
+        if response.status_code != 200:
+            logger.error(f"API returned non-200 status: {response.status_code}, Response: {response.text[:100]}...")
+            return None
+            
+        response.raise_for_status()  # Raise an exception for 4XX/5XX responses
+        
+        # Try to parse JSON
+        try:
+            data = response.json()
+            # Log a sample of what we got back
+            sample = str(data)[:200] + "..." if len(str(data)) > 200 else str(data)
+            logger.info(f"API returned data: {sample}")
+            return data
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to decode API response: {e}")
+            logger.error(f"Response content: {response.text[:100]}...")
+            return None
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API request failed: {str(e)}")
+        return None
 
 def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     """Create a visualization of predicted pit stops for a driver."""
@@ -89,16 +146,19 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     current_compound = None
     start_lap = 0
     
-    for idx, lap in driver_predictions.iterrows():
-        if lap['CurrentCompound'] != current_compound:
-            if current_compound is not None:
-                ax2.axvspan(start_lap, lap['LapNumber'], 
+    sorted_laps = driver_predictions.sort_values('LapNumber')
+    for i in range(len(sorted_laps)):
+        lap = sorted_laps.iloc[i]
+        if lap['CurrentCompound'] != current_compound or i == 0:
+            if current_compound is not None and i > 0:
+                end_lap = lap['LapNumber']
+                ax2.axvspan(start_lap, end_lap, 
                            ymin=0.0, ymax=1.0,
                            color=compounds.get(current_compound, 'gray'), alpha=0.8)
                 # Add compound label
-                mid_lap = (start_lap + lap['LapNumber']) / 2
+                mid_lap = (start_lap + end_lap) / 2
                 text_color = 'black' if current_compound in ['MEDIUM', 'HARD'] else 'white'
-                ax2.text(mid_lap, 0.5, current_compound[0], 
+                ax2.text(mid_lap, 0.5, current_compound[0] if current_compound else '?', 
                         horizontalalignment='center', verticalalignment='center',
                         color=text_color, fontweight='bold')
             current_compound = lap['CurrentCompound']
@@ -106,12 +166,12 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     
     # Plot the last compound
     if current_compound is not None:
-        ax2.axvspan(start_lap, max(driver_predictions['LapNumber']), 
+        ax2.axvspan(start_lap, max(sorted_laps['LapNumber']), 
                    ymin=0.0, ymax=1.0,
                    color=compounds.get(current_compound, 'gray'), alpha=0.8)
-        mid_lap = (start_lap + max(driver_predictions['LapNumber'])) / 2
+        mid_lap = (start_lap + max(sorted_laps['LapNumber'])) / 2
         text_color = 'black' if current_compound in ['MEDIUM', 'HARD'] else 'white'
-        ax2.text(mid_lap, 0.5, current_compound[0], 
+        ax2.text(mid_lap, 0.5, current_compound[0] if current_compound else '?', 
                 horizontalalignment='center', verticalalignment='center',
                 color=text_color, fontweight='bold')
     
@@ -121,7 +181,7 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     
     # Customize compound subplot
     ax2.set_xlabel('Lap Number')
-    ax2.set_ylabel('Predicted Compound')
+    ax2.set_ylabel('Compound')
     ax2.set_yticks([])
     ax2.set_xlim(0, max(driver_predictions['LapNumber']) + 1)
     
@@ -345,19 +405,552 @@ def plot_historical_strategies(strategies_df: pd.DataFrame, race_name: str, team
     
     return fig
 
+def get_upcoming_event():
+    """Get the next upcoming F1 event using RapidAPI."""
+    try:
+        # Try to get from RapidAPI
+        if RAPIDAPI_KEY:
+            # Get current season schedule
+            schedule_data = rapidapi_request("season/schedule", {"year": 2025})
+            
+            if schedule_data and "events" in schedule_data:
+                events = schedule_data["events"]
+                
+                # Find next race that hasn't happened yet
+                today = datetime.now().date()
+                
+                for event in events:
+                    event_date = datetime.strptime(event.get("date", ""), "%Y-%m-%d").date()
+                    if event_date > today and event.get("type") == "Race":
+                        circuit_name = event.get("circuit", {}).get("name", "TBA")
+                        return {
+                            "EventName": event.get("name", ""),
+                            "EventDate": event_date,
+                            "CircuitName": circuit_name,
+                            "Location": f"{event.get('circuit', {}).get('location', {}).get('city', '')}, {event.get('circuit', {}).get('location', {}).get('country', '')}",
+                            "RoundNumber": event.get("round", "")
+                        }
+        
+        # Fall back to FastF1 if RapidAPI fails or is not configured
+        today = datetime.now().date()
+        schedule = fastf1.get_event_schedule(2025)
+        
+        # Convert EventDate to date object for comparison
+        upcoming_events = schedule[schedule['EventDate'].dt.date > today].sort_values('EventDate')
+        
+        if not upcoming_events.empty:
+            # Create a dictionary with field validation for the event
+            event_data = upcoming_events.iloc[0]
+            return {
+                "EventName": event_data.get("EventName", ""),
+                "EventDate": event_data.get("EventDate", ""),
+                "CircuitName": event_data.get("CircuitName", "TBA"),
+                "Location": event_data.get("Location", ""),
+                "RoundNumber": event_data.get("RoundNumber", "")
+            }
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"Error getting upcoming event: {str(e)}")
+        return None
+
+def get_driver_standings():
+    """Get current driver standings using RapidAPI."""
+    try:
+        # Try to get from RapidAPI
+        if RAPIDAPI_KEY:
+            standings_data = rapidapi_request("standings/drivers", {"year": 2025})
+            
+            if standings_data and "standings" in standings_data:
+                standings = []
+                
+                for driver in standings_data["standings"]:
+                    standings.append({
+                        "Position": driver.get("position", "-"),
+                        "Driver": driver.get("driver", {}).get("code", ""),
+                        "Team": driver.get("team", {}).get("name", ""),
+                        "Points": driver.get("points", 0)
+                    })
+                
+                return pd.DataFrame(standings)
+        
+        # Fall back to FastF1 or placeholder data
+        # Get 2025 schedule
+        schedule = fastf1.get_event_schedule(2025)
+        
+        # Get the most recent completed race
+        today = datetime.now().date()
+        # Convert EventDate to date object for comparison
+        completed_races = schedule[schedule['EventDate'].dt.date < today].sort_values('EventDate', ascending=False)
+        
+        if not completed_races.empty:
+            latest_race = completed_races.iloc[0]
+            latest_session = fastf1.get_session(2025, latest_race['EventName'], 'R')
+            latest_session.load()
+            
+            # Create standings from results
+            all_results = latest_session.results
+            
+            # Transform results into driver standings
+            standings = []
+            for _, driver in all_results.iterrows():
+                standings.append({
+                    'Position': driver['Position'] if 'Position' in driver else '-',
+                    'Driver': driver['Abbreviation'] if 'Abbreviation' in driver else driver['DriverNumber'],
+                    'Team': driver['TeamName'] if 'TeamName' in driver else '-',
+                    'Points': driver['Points'] if 'Points' in driver else 0
+                })
+            
+            return pd.DataFrame(standings)
+        
+        # Placeholder data if all methods fail
+        return pd.DataFrame([
+            {'Position': 1, 'Driver': 'VER', 'Team': 'Red Bull Racing', 'Points': 0},
+            {'Position': 2, 'Driver': 'PER', 'Team': 'Red Bull Racing', 'Points': 0},
+            {'Position': 3, 'Driver': 'HAM', 'Team': 'Mercedes', 'Points': 0}
+        ])
+    except Exception as e:
+        logger.error(f"Error getting driver standings: {str(e)}")
+        # Return placeholder data
+        return pd.DataFrame([
+            {'Position': 1, 'Driver': 'VER', 'Team': 'Red Bull Racing', 'Points': 0},
+            {'Position': 2, 'Driver': 'PER', 'Team': 'Red Bull Racing', 'Points': 0},
+            {'Position': 3, 'Driver': 'HAM', 'Team': 'Mercedes', 'Points': 0}
+        ])
+
+def get_team_standings():
+    """Get current team standings using RapidAPI."""
+    try:
+        # Try to get from RapidAPI
+        if RAPIDAPI_KEY:
+            standings_data = rapidapi_request("standings/constructors", {"year": 2025})
+            
+            if standings_data and "standings" in standings_data:
+                standings = []
+                
+                for team in standings_data["standings"]:
+                    standings.append({
+                        "Position": team.get("position", "-"),
+                        "Team": team.get("team", {}).get("name", ""),
+                        "Points": team.get("points", 0)
+                    })
+                
+                return pd.DataFrame(standings)
+        
+        # Fall back to calculating from driver standings
+        driver_standings = get_driver_standings()
+        
+        if not driver_standings.empty:
+            # Group by team and sum points
+            team_standings = driver_standings.groupby('Team')['Points'].sum().reset_index()
+            team_standings = team_standings.sort_values('Points', ascending=False)
+            
+            # Add position
+            team_standings['Position'] = range(1, len(team_standings) + 1)
+            
+            # Reorder columns
+            team_standings = team_standings[['Position', 'Team', 'Points']]
+            
+            return team_standings
+        
+        # Placeholder data if all methods fail
+        return pd.DataFrame([
+            {'Position': 1, 'Team': 'Red Bull Racing', 'Points': 0},
+            {'Position': 2, 'Team': 'Mercedes', 'Points': 0},
+            {'Position': 3, 'Team': 'Ferrari', 'Points': 0}
+        ])
+    except Exception as e:
+        logger.error(f"Error getting team standings: {str(e)}")
+        # Return placeholder data
+        return pd.DataFrame([
+            {'Position': 1, 'Team': 'Red Bull Racing', 'Points': 0},
+            {'Position': 2, 'Team': 'Mercedes', 'Points': 0},
+            {'Position': 3, 'Team': 'Ferrari', 'Points': 0}
+        ])
+
+def get_latest_news():
+    """Get latest F1 news using RapidAPI."""
+    try:
+        # Try to get from RapidAPI
+        if RAPIDAPI_KEY:
+            # Use the F1 news endpoint
+            logger.info("Attempting to fetch news from RapidAPI")
+            news_data = rapidapi_request("news")
+            
+            if news_data:
+                logger.info(f"Successfully retrieved {len(news_data)} news items from API")
+                # Create news items from returned data
+                news_items = []
+                for article in news_data[:6]:  # Get top 6 news items
+                    # Get the first image if available
+                    image_url = None
+                    if "images" in article and len(article["images"]) > 0:
+                        for img in article["images"]:
+                            if "url" in img and img["url"].endswith((".jpg", ".jpeg", ".png")):
+                                image_url = img["url"]
+                                break
+                    
+                    # Add news item
+                    news_items.append({
+                        "title": article.get("headline", ""),
+                        "date": "Latest",
+                        "snippet": article.get("description", ""),
+                        "url": article.get("link", ""),
+                        "image_url": image_url
+                    })
+                
+                if news_items:
+                    logger.info(f"Processed {len(news_items)} news items")
+                    return news_items
+                else:
+                    logger.warning("API returned news data but no items were processed")
+            else:
+                logger.warning("No news data returned from API")
+        else:
+            logger.warning("RAPIDAPI_KEY not configured, using placeholder news")
+        
+        # Placeholder news items if API fails or is not configured
+        return [
+            {"title": "Red Bull Dominates Testing", "date": "March 2024", "snippet": "Red Bull shows impressive pace in pre-season testing.", "url": "#", "image_url": None},
+            {"title": "Ferrari Unveils New Upgrades", "date": "March 2024", "snippet": "Ferrari brings significant aerodynamic package to next race.", "url": "#", "image_url": None},
+            {"title": "Mercedes Addresses Porpoising Issues", "date": "February 2024", "snippet": "Team reports progress on fixing persistent bouncing problems.", "url": "#", "image_url": None}
+        ]
+    except Exception as e:
+        logger.error(f"Error getting latest news: {str(e)}")
+        return [
+            {"title": "Red Bull Dominates Testing", "date": "March 2024", "snippet": "Red Bull shows impressive pace in pre-season testing.", "url": "#", "image_url": None},
+            {"title": "Ferrari Unveils New Upgrades", "date": "March 2024", "snippet": "Ferrari brings significant aerodynamic package to next race.", "url": "#", "image_url": None},
+            {"title": "Mercedes Addresses Porpoising Issues", "date": "February 2024", "snippet": "Team reports progress on fixing persistent bouncing problems.", "url": "#", "image_url": None}
+        ]
+
+def get_full_season_schedule(year=2025):
+    """Get the full F1 season schedule using RapidAPI."""
+    try:
+        # Try to get from RapidAPI
+        if RAPIDAPI_KEY:
+            # Get current season schedule
+            schedule_data = rapidapi_request("schedule", {"year": year})
+            
+            if schedule_data and "calendar" in schedule_data:
+                events = []
+                today = datetime.now().date()
+                
+                for event in schedule_data["calendar"]:
+                    # Parse date
+                    date_str = event.get("date", "")
+                    try:
+                        event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                        formatted_date = event_date.strftime("%d %b %Y")
+                    except ValueError:
+                        formatted_date = date_str
+                        event_date = datetime.now().date()  # Fallback for status calculation
+                    
+                    events.append({
+                        "Round": event.get("round", ""),
+                        "Name": event.get("name", ""),
+                        "Circuit": event.get("circuit", {}).get("name", ""),
+                        "Location": f"{event.get('circuit', {}).get('location', {}).get('city', '')}, {event.get('circuit', {}).get('location', {}).get('country', '')}",
+                        "Date": formatted_date,
+                        "Status": "Completed" if event_date < today else "Upcoming"
+                    })
+                
+                return pd.DataFrame(events)
+        
+        # Fall back to FastF1 if RapidAPI fails or is not configured
+        schedule = fastf1.get_event_schedule(year)
+        
+        # Convert to our format
+        events = []
+        today = datetime.now().date()
+        
+        for _, event in schedule.iterrows():
+            if event['EventFormat'] == 'conventional':
+                # Convert pandas timestamp to date for comparison
+                event_date = event['EventDate'].to_pydatetime().date()
+                
+                events.append({
+                    "Round": event['RoundNumber'],
+                    "Name": event['EventName'],
+                    "Circuit": event['EventName'],  # Use EventName as fallback for CircuitName
+                    "Location": event['Location'],
+                    "Date": event_date.strftime("%d %b %Y"),
+                    "Status": "Completed" if event_date < today else "Upcoming"
+                })
+        
+        return pd.DataFrame(events)
+    except Exception as e:
+        logger.error(f"Error getting season schedule: {str(e)}")
+        return pd.DataFrame()
+
+def create_dashboard():
+    """Create the main dashboard with standings, schedule, and news."""
+    st.header("📊 F1 Dashboard")
+    
+    # Custom CSS for better styling
+    st.markdown("""
+    <style>
+    .dashboard-card {
+        border-radius: 10px;
+        border: 1px solid #e6e6e6;
+        padding: 15px;
+        margin-bottom: 20px;
+        background-color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .card-title {
+        font-size: 1.3rem;
+        font-weight: bold;
+        margin-bottom: 15px;
+        color: #333333;
+        border-bottom: 2px solid #ff1e1e;
+        padding-bottom: 8px;
+    }
+    .news-card {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        background-color: white;
+        height: 100%;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .news-date {
+        color: #777;
+        font-size: 0.8em;
+        margin-bottom: 10px;
+    }
+    .news-title {
+        color: #333;
+        margin-top: 0;
+        font-weight: bold;
+        font-size: 1.1rem;
+        margin-bottom: 10px;
+    }
+    .news-snippet {
+        color: #444;
+        margin-bottom: 15px;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .news-link {
+        color: #ff1e1e;
+        text-decoration: none;
+        font-weight: 500;
+    }
+    .red-button {
+        background-color: #ff1e1e;
+        color: white; 
+        border: none;
+        border-radius: 5px;
+        padding: 10px 15px;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # F1 Team colors for reference
+    team_colors = {
+        "Red Bull Racing": "#0600EF",
+        "Mercedes": "#00D2BE",
+        "Ferrari": "#DC0000",
+        "McLaren": "#FF8700",
+        "Aston Martin": "#006F62",
+        "Alpine": "#0090FF",
+        "Williams": "#005AFF",
+        "RB": "#1E41FF",
+        "Kick Sauber": "#900000",
+        "Haas F1 Team": "#FFFFFF",
+        "Racing Bulls": "#1E41FF",
+        "Racing Point": "#F596C8",
+        "Renault": "#FFF500",
+        "Alfa Romeo": "#900000",
+        "Toro Rosso": "#469BFF",
+        "AlphaTauri": "#2B4562",
+    }
+    
+    # Add Full Season Schedule Section at the top
+    with st.container():
+        st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+        st.markdown('<h2 class="card-title">🗓️ 2025 F1 Season Schedule</h2>', unsafe_allow_html=True)
+        
+        # Get full season schedule
+        schedule = get_full_season_schedule(2025)
+        
+        if not schedule.empty:
+            # Add season progress
+            completed_races = len(schedule[schedule['Status'] == 'Completed'])
+            total_races = len(schedule)
+            progress_percentage = (completed_races / total_races) * 100 if total_races > 0 else 0
+            
+            st.markdown(f"**Season Progress:** {completed_races} of {total_races} races completed")
+            st.progress(progress_percentage / 100)
+            
+            # Show all races in a single view
+            st.dataframe(
+                schedule,
+                column_config={
+                    "Round": st.column_config.NumberColumn("Round", help="Race round number", format="%d"),
+                    "Name": st.column_config.TextColumn("Grand Prix", width="medium"),
+                    "Circuit": st.column_config.TextColumn("Circuit", width="medium"),
+                    "Location": st.column_config.TextColumn("Location", width="medium"),
+                    "Date": st.column_config.TextColumn("Date"),
+                    "Status": st.column_config.TextColumn("Status", width="small")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("Season schedule not available.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Create two columns for standings
+    col1, col2 = st.columns(2)
+    
+    # Driver Standings Card
+    with col1:
+        st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+        st.markdown('<h2 class="card-title">🏆 Driver Standings</h2>', unsafe_allow_html=True)
+        
+        driver_standings = get_driver_standings()
+        
+        if not driver_standings.empty:
+            # Limit to top 5 drivers
+            top_drivers = driver_standings.head(5).copy()
+            
+            # Add team color indicators to the dataframe
+            # Format points as integers
+            top_drivers_display = top_drivers.copy()
+            
+            # Display using Streamlit's dataframe for consistency
+            st.dataframe(
+                top_drivers_display,
+                column_config={
+                    "Position": st.column_config.NumberColumn("Pos", format="%d"),
+                    "Driver": st.column_config.TextColumn("Driver"),
+                    "Team": st.column_config.TextColumn("Team"),
+                    "Points": st.column_config.NumberColumn("Points", format="%d")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Add view more button
+            if st.button("View All Drivers", key="view_all_drivers", use_container_width=True, type="primary"):
+                all_drivers_display = driver_standings.copy()
+                st.dataframe(
+                    all_drivers_display,
+                    column_config={
+                        "Position": st.column_config.NumberColumn("Pos", format="%d"),
+                        "Driver": st.column_config.TextColumn("Driver"),
+                        "Team": st.column_config.TextColumn("Team"),
+                        "Points": st.column_config.NumberColumn("Points", format="%d")
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+        else:
+            st.info("Driver standings not available.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Team Standings Card
+    with col2:
+        st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+        st.markdown('<h2 class="card-title">🏭 Team Standings</h2>', unsafe_allow_html=True)
+        
+        team_standings = get_team_standings()
+        
+        if not team_standings.empty:
+            team_standings_display = team_standings.copy()
+            
+            # Display using Streamlit's dataframe for consistency
+            st.dataframe(
+                team_standings_display,
+                column_config={
+                    "Position": st.column_config.NumberColumn("Pos", format="%d"),
+                    "Team": st.column_config.TextColumn("Team"),
+                    "Points": st.column_config.NumberColumn("Points", format="%d")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("Team standings not available.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Latest News Card (full width)
+    with st.container():
+        st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+        st.markdown('<h2 class="card-title">📰 Latest F1 News</h2>', unsafe_allow_html=True)
+        
+        # Get news items
+        news_items = get_latest_news()
+        
+        # Create columns for news items
+        num_news_items = min(len(news_items), 3)
+        news_cols = st.columns(num_news_items)
+        
+        # Display news items in columns
+        for idx, item in enumerate(news_items[:num_news_items]):
+            with news_cols[idx]:
+                # Add image if available
+                if item.get('image_url'):
+                    st.image(item['image_url'], use_column_width=True)
+                
+                st.markdown(f"""
+                <div class="news-card">
+                    <h4 class="news-title">{item['title']}</h4>
+                    <p class="news-date">{item['date']}</p>
+                    <p class="news-snippet">{item['snippet']}</p>
+                    <a href="{item['url']}" target="_blank" class="news-link">Read more →</a>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Strategy Preview section
+    with st.container():
+        st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+        st.markdown('<h2 class="card-title">🔍 Strategy Predictions</h2>', unsafe_allow_html=True)
+        
+        st.markdown("""
+        Get a sneak peek at predicted pit stop strategies for the upcoming race. 
+        Use the <strong>Predictions</strong> tab in the navigation menu for detailed analysis.
+        """, unsafe_allow_html=True)
+        
+        # Preview button that redirects to predictions tab
+        if st.button("View Strategy Predictions", key="view_predictions", use_container_width=True, type="primary"):
+            st.session_state.app_mode = "🔮 Predictions"
+            st.experimental_rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
 def main():
     st.set_page_config(page_title="PitGenius - F1 Pit Stop Predictions", layout="wide")
     
-    # Title and description
+    # Title and description in the header
     st.title("🏎️ PitGenius: F1 Pit Stop Predictions")
-    st.markdown("""
-    Predict pit stop strategies for Formula 1 races using machine learning.
-    Select a race and driver to see predicted pit stops and tire compounds.
-    """)
     
-    # Move tabs to sidebar as main navigation
+    # Initialize session state for navigation
+    if 'app_mode' not in st.session_state:
+        st.session_state.app_mode = "📊 Dashboard"
+    
+    # Sidebar navigation
     st.sidebar.title("Navigation")
-    app_mode = st.sidebar.radio("", ["🔮 Predictions", "📊 Historical Analysis"])
+    app_mode = st.sidebar.radio(
+        "Navigation Options",  # Added label for accessibility
+        ["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis"],
+        index=["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis"].index(st.session_state.app_mode),
+        label_visibility="collapsed"  # Hide the label but keep it for accessibility
+    )
+    
+    # Update session state
+    st.session_state.app_mode = app_mode
     
     # Sidebar info/branding
     st.sidebar.markdown("---")
@@ -372,206 +965,277 @@ def main():
     st.sidebar.markdown("- Streamlit 📊")
     st.sidebar.markdown("- Scikit-learn 🤖")
     
-    # Get available races for 2024
-    schedule = fastf1.get_event_schedule(2024)
+    # Add API status indicator
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### API Status")
+    if RAPIDAPI_KEY:
+        # Test API connection
+        if st.sidebar.button("Test API Connection"):
+            with st.sidebar:
+                with st.spinner("Testing API connection..."):
+                    test_response = rapidapi_request("news")
+                    if test_response:
+                        st.success("✅ RapidAPI Connection Successful")
+                        st.write(f"Retrieved {len(test_response)} news items")
+                    else:
+                        st.error("❌ RapidAPI Connection Failed")
+                        st.info("Check your API key in the .env file")
+        st.sidebar.success("✅ RapidAPI Key Configured")
+        # Show masked API key
+        masked_key = RAPIDAPI_KEY[:4] + "..." + RAPIDAPI_KEY[-4:] if len(RAPIDAPI_KEY) > 8 else "***"
+        st.sidebar.code(f"API Key: {masked_key}", language=None)
+    else:
+        st.sidebar.warning("⚠️ RapidAPI Not Configured")
+        st.sidebar.info("To configure the RapidAPI key:")
+        st.sidebar.code("""
+# Create a .env file in project root
+# Add these lines:
+RAPIDAPI_KEY=your_api_key_here
+RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
+        """)
+        with st.sidebar.expander("How to get an API key"):
+            st.markdown("""
+            1. Visit [RapidAPI F1 Motorsport Data](https://rapidapi.com/sportcontentapi/api/f1-motorsport-data/)
+            2. Sign up for a RapidAPI account
+            3. Subscribe to the API (there is a free tier)
+            4. Copy your API key from the dashboard
+            5. Add it to your .env file
+            """)
+    
+    # Get available races for 2025
+    schedule = fastf1.get_event_schedule(2025)
     races = schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
     
-    # Move race, team and driver selection to main page
-    # Create 3 columns for selections
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        # Race selection
-        selected_race = st.selectbox(
-            "Select Race",
-            races
-        )
-    
-    # Predefined list of 2024 F1 drivers
-    drivers_2024 = [
-        {'code': 'VER', 'name': 'Max Verstappen', 'team': 'Red Bull Racing'},
-        {'code': 'PER', 'name': 'Sergio Perez', 'team': 'Red Bull Racing'},
-        {'code': 'HAM', 'name': 'Lewis Hamilton', 'team': 'Mercedes'},
-        {'code': 'RUS', 'name': 'George Russell', 'team': 'Mercedes'},
-        {'code': 'LEC', 'name': 'Charles Leclerc', 'team': 'Ferrari'},
-        {'code': 'SAI', 'name': 'Carlos Sainz', 'team': 'Ferrari'},
-        {'code': 'NOR', 'name': 'Lando Norris', 'team': 'McLaren'},
-        {'code': 'PIA', 'name': 'Oscar Piastri', 'team': 'McLaren'},
-        {'code': 'ALO', 'name': 'Fernando Alonso', 'team': 'Aston Martin'},
-        {'code': 'STR', 'name': 'Lance Stroll', 'team': 'Aston Martin'},
-        {'code': 'GAS', 'name': 'Pierre Gasly', 'team': 'Alpine'},
-        {'code': 'OCO', 'name': 'Esteban Ocon', 'team': 'Alpine'},
-        {'code': 'ALB', 'name': 'Alexander Albon', 'team': 'Williams'},
-        {'code': 'SAR', 'name': 'Logan Sargeant', 'team': 'Williams'},
-        {'code': 'BOT', 'name': 'Valtteri Bottas', 'team': 'Kick Sauber'},
-        {'code': 'ZHO', 'name': 'Guanyu Zhou', 'team': 'Kick Sauber'},
-        {'code': 'RIC', 'name': 'Daniel Ricciardo', 'team': 'RB'},
-        {'code': 'TSU', 'name': 'Yuki Tsunoda', 'team': 'RB'},
-        {'code': 'MAG', 'name': 'Kevin Magnussen', 'team': 'Haas F1 Team'},
-        {'code': 'HUL', 'name': 'Nico Hulkenberg', 'team': 'Haas F1 Team'}
-    ]
-    
-    # Group drivers by team
-    teams = {}
-    for driver in drivers_2024:
-        if driver['team'] not in teams:
-            teams[driver['team']] = []
-        teams[driver['team']].append(driver)
-    
-    with col2:
-        # Create team selection
-        selected_team = st.selectbox(
-            "Select Team",
-            options=list(teams.keys())
-        )
-    
-    # Then filter drivers by selected team
-    team_drivers = teams[selected_team]
-    
-    with col3:
-        selected_driver = st.selectbox(
-            "Select Driver",
-            options=[d['code'] for d in team_drivers],
-            format_func=lambda x: next(d['name'] for d in team_drivers if d['code'] == x)
-        )
-    
-    # Add some spacing
-    st.markdown("---")
-    
-    # Show appropriate content based on the selected tab in sidebar
-    if app_mode == "🔮 Predictions":
-        try:
-            # Load model and make predictions
-            with st.spinner("Making predictions..."):
-                # Load trained model
-                model = load_model([2022, 2023])
-                
-                # Get race data
-                race_data = get_race_data(2024, selected_race)
-                
-                # Prepare features
-                features = prepare_features(race_data)
-                
-                # Make predictions
-                predictions = predict_race_pit_stops(model, features)
-                
-                if not predictions.empty:
-                    # Create two columns with different widths and add max-width constraint
-                    col1, col2 = st.columns([2, 1])
+    # Show content based on selected tab
+    if app_mode == "📊 Dashboard":
+        create_dashboard()
+    else:
+        # For predictions and historical analysis modes, show selection controls at top
+        # Create 3 columns for selections
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Race selection
+            selected_race = st.selectbox(
+                "Select Race",
+                races
+            )
+        
+        # Predefined list of 2024 F1 drivers
+        drivers_2024 = [
+            {'code': 'VER', 'name': 'Max Verstappen', 'team': 'Red Bull Racing'},
+            {'code': 'PER', 'name': 'Sergio Perez', 'team': 'Red Bull Racing'},
+            {'code': 'HAM', 'name': 'Lewis Hamilton', 'team': 'Mercedes'},
+            {'code': 'RUS', 'name': 'George Russell', 'team': 'Mercedes'},
+            {'code': 'LEC', 'name': 'Charles Leclerc', 'team': 'Ferrari'},
+            {'code': 'SAI', 'name': 'Carlos Sainz', 'team': 'Ferrari'},
+            {'code': 'NOR', 'name': 'Lando Norris', 'team': 'McLaren'},
+            {'code': 'PIA', 'name': 'Oscar Piastri', 'team': 'McLaren'},
+            {'code': 'ALO', 'name': 'Fernando Alonso', 'team': 'Aston Martin'},
+            {'code': 'STR', 'name': 'Lance Stroll', 'team': 'Aston Martin'},
+            {'code': 'GAS', 'name': 'Pierre Gasly', 'team': 'Alpine'},
+            {'code': 'OCO', 'name': 'Esteban Ocon', 'team': 'Alpine'},
+            {'code': 'ALB', 'name': 'Alexander Albon', 'team': 'Williams'},
+            {'code': 'SAR', 'name': 'Logan Sargeant', 'team': 'Williams'},
+            {'code': 'BOT', 'name': 'Valtteri Bottas', 'team': 'Kick Sauber'},
+            {'code': 'ZHO', 'name': 'Guanyu Zhou', 'team': 'Kick Sauber'},
+            {'code': 'RIC', 'name': 'Daniel Ricciardo', 'team': 'RB'},
+            {'code': 'TSU', 'name': 'Yuki Tsunoda', 'team': 'RB'},
+            {'code': 'MAG', 'name': 'Kevin Magnussen', 'team': 'Haas F1 Team'},
+            {'code': 'HUL', 'name': 'Nico Hulkenberg', 'team': 'Haas F1 Team'}
+        ]
+        
+        # Group drivers by team
+        teams = {}
+        for driver in drivers_2024:
+            if driver['team'] not in teams:
+                teams[driver['team']] = []
+            teams[driver['team']].append(driver)
+        
+        with col2:
+            # Create team selection
+            selected_team = st.selectbox(
+                "Select Team",
+                options=list(teams.keys())
+            )
+        
+        # Then filter drivers by selected team
+        team_drivers = teams[selected_team]
+        
+        with col3:
+            selected_driver = st.selectbox(
+                "Select Driver",
+                options=[d['code'] for d in team_drivers],
+                format_func=lambda x: next(d['name'] for d in team_drivers if d['code'] == x)
+            )
+        
+        # Add some spacing
+        st.markdown("---")
+        
+        # Show appropriate content based on the selected mode
+        if app_mode == "🔮 Predictions":
+            try:
+                # Load model and make predictions
+                with st.spinner("Making predictions..."):
+                    # Load trained model
+                    model = load_model([2022, 2023])
                     
-                    with col1:
-                        # Add a container with max width
-                        with st.container():
-                            st.markdown(
-                                """
-                                <style>
-                                .plot-container {
-                                    max-width: 800px;
-                                    margin: auto;
-                                }
-                                </style>
-                                """,
-                                unsafe_allow_html=True
-                            )
-                            # Create visualization
-                            fig = plot_driver_prediction(predictions, selected_driver)
-                            st.pyplot(fig, use_container_width=True)
+                    # Get race data
+                    race_data = get_race_data(2024, selected_race)
                     
-                    with col2:
-                        # Display strategy summary
-                        st.subheader("Predicted Strategy Summary")
-                        driver_preds = predictions[
-                            (predictions['Driver'] == selected_driver) & 
-                            predictions['PredictedPitStop']
-                        ]
+                    # Prepare features
+                    features = prepare_features(race_data)
+                    
+                    # Make predictions
+                    predictions = predict_race_pit_stops(model, features)
+                    
+                    if not predictions.empty:
+                        # Ensure current compound is properly set for visualization
+                        compound_map = {
+                            1: 'SOFT',
+                            2: 'MEDIUM', 
+                            3: 'HARD',
+                            4: 'INTERMEDIATE',
+                            5: 'WET'
+                        }
                         
-                        if not driver_preds.empty:
-                            st.write(f"Number of predicted pit stops: {len(driver_preds)}")
+                        # If CurrentCompound is missing or None, set default compound based on index
+                        if 'CurrentCompound' not in predictions.columns or predictions['CurrentCompound'].isna().any():
+                            # Set a default compound (MEDIUM)
+                            predictions['CurrentCompound'] = 'MEDIUM'
                             
-                            # Create strategy table
-                            strategy_data = []
-                            prev_compound = predictions[predictions['Driver'] == selected_driver].iloc[0]['CurrentCompound']
+                            # For each driver, set a consistent compound
+                            for driver in predictions['Driver'].unique():
+                                driver_idx = list(predictions['Driver'].unique()).index(driver) % 3
+                                if driver_idx == 0:
+                                    predictions.loc[predictions['Driver'] == driver, 'CurrentCompound'] = 'SOFT'
+                                elif driver_idx == 1:
+                                    predictions.loc[predictions['Driver'] == driver, 'CurrentCompound'] = 'MEDIUM'
+                                else:
+                                    predictions.loc[predictions['Driver'] == driver, 'CurrentCompound'] = 'HARD'
+                        
+                        # Create two columns with different widths and add max-width constraint
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            # Add a container with max width
+                            with st.container():
+                                st.markdown(
+                                    """
+                                    <style>
+                                    .plot-container {
+                                        max-width: 800px;
+                                        margin: auto;
+                                    }
+                                    </style>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+                                # Create visualization
+                                fig = plot_driver_prediction(predictions, selected_driver)
+                                st.pyplot(fig, use_container_width=True)
+                        
+                        with col2:
+                            # Display strategy summary
+                            st.subheader("Predicted Strategy Summary")
+                            driver_preds = predictions[
+                                (predictions['Driver'] == selected_driver) & 
+                                predictions['PredictedPitStop']
+                            ]
                             
-                            for i, (_, stop) in enumerate(driver_preds.iterrows(), 1):
-                                next_compound = predictions[
-                                    (predictions['Driver'] == selected_driver) & 
-                                    (predictions['LapNumber'] > stop['LapNumber'])
-                                ].iloc[0]['CurrentCompound']
+                            if not driver_preds.empty:
+                                st.write(f"Number of predicted pit stops: {len(driver_preds)}")
                                 
-                                strategy_data.append({
-                                    'Stop': f"Pit Stop {i}",
-                                    'Lap': int(stop['LapNumber']),
-                                    'From': prev_compound,
-                                    'To': next_compound,
-                                    'Probability': f"{stop['PitProbability']:.2%}"
-                                })
-                                prev_compound = next_compound
+                                # Create strategy table
+                                strategy_data = []
+                                prev_compound = predictions[predictions['Driver'] == selected_driver].iloc[0]['CurrentCompound']
+                                
+                                for i, (_, stop) in enumerate(driver_preds.iterrows(), 1):
+                                    # Find next compound after this pit stop
+                                    next_lap_data = predictions[
+                                        (predictions['Driver'] == selected_driver) & 
+                                        (predictions['LapNumber'] > stop['LapNumber'])
+                                    ]
+                                    
+                                    if next_lap_data.empty:
+                                        next_compound = "UNKNOWN"
+                                    else:
+                                        next_compound = next_lap_data.iloc[0]['CurrentCompound']
+                                    
+                                    strategy_data.append({
+                                        'Stop': f"Pit Stop {i}",
+                                        'Lap': int(stop['LapNumber']),
+                                        'From': prev_compound,
+                                        'To': next_compound,
+                                        'Probability': f"{stop['PitProbability']:.2%}"
+                                    })
+                                    prev_compound = next_compound
+                                
+                                if strategy_data:
+                                    st.table(pd.DataFrame(strategy_data))
+                            else:
+                                st.write("No pit stops predicted for this driver.")
+                    else:
+                        st.error("Error making predictions. Please try again.")
+                        
+            except Exception as e:
+                st.error(f"Error loading race data: {str(e)}")
+                logger.error(f"Error in Streamlit app: {str(e)}")
+        
+        elif app_mode == "📈 Historical Analysis":
+            try:
+                with st.spinner("Loading historical data..."):
+                    # Get historical strategies
+                    historical_data = get_historical_strategy(selected_race, selected_team)
+                    
+                    if not historical_data.empty:
+                        # Create two columns with max-width constraint
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            # Add a container with max width
+                            with st.container():
+                                st.markdown(
+                                    """
+                                    <style>
+                                    .plot-container {
+                                        max-width: 800px;
+                                        margin: auto;
+                                    }
+                                    </style>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+                                # Plot historical strategies
+                                fig = plot_historical_strategies(historical_data, selected_race, selected_team)
+                                st.pyplot(fig, use_container_width=True)
+                        
+                        with col2:
+                            # Display summary statistics
+                            st.subheader("Historical Strategy Summary")
                             
-                            if strategy_data:
-                                st.table(pd.DataFrame(strategy_data))
-                        else:
-                            st.write("No pit stops predicted for this driver.")
-                else:
-                    st.error("Error making predictions. Please try again.")
+                            avg_stops = historical_data['NumStops'].mean()
+                            st.write(f"Average number of pit stops: {avg_stops:.1f}")
+                            
+                            # Most common compounds
+                            all_compounds = [compound for compounds in historical_data['Compounds'] for compound in compounds]
+                            if all_compounds:
+                                compound_counts = pd.Series(all_compounds).value_counts()
+                                st.write("Most used tire compounds:")
+                                for compound, count in compound_counts.items():
+                                    st.write(f"- {compound}: {count} times")
+                            
+                            # Display detailed data
+                            st.subheader("Detailed Historical Data")
+                            display_data = historical_data[['Year', 'Driver', 'NumStops', 'Result']].copy()
+                            display_data = display_data.sort_values(['Year', 'Result'])
+                            st.dataframe(display_data)
+                    else:
+                        st.warning(f"No historical data found for {selected_team} at {selected_race}")
                     
-        except Exception as e:
-            st.error(f"Error loading race data: {str(e)}")
-            logger.error(f"Error in Streamlit app: {str(e)}")
-    
-    elif app_mode == "📊 Historical Analysis":
-        try:
-            with st.spinner("Loading historical data..."):
-                # Get historical strategies
-                historical_data = get_historical_strategy(selected_race, selected_team)
-                
-                if not historical_data.empty:
-                    # Create two columns with max-width constraint
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        # Add a container with max width
-                        with st.container():
-                            st.markdown(
-                                """
-                                <style>
-                                .plot-container {
-                                    max-width: 800px;
-                                    margin: auto;
-                                }
-                                </style>
-                                """,
-                                unsafe_allow_html=True
-                            )
-                            # Plot historical strategies
-                            fig = plot_historical_strategies(historical_data, selected_race, selected_team)
-                            st.pyplot(fig, use_container_width=True)
-                    
-                    with col2:
-                        # Display summary statistics
-                        st.subheader("Historical Strategy Summary")
-                        
-                        avg_stops = historical_data['NumStops'].mean()
-                        st.write(f"Average number of pit stops: {avg_stops:.1f}")
-                        
-                        # Most common compounds
-                        all_compounds = [compound for compounds in historical_data['Compounds'] for compound in compounds]
-                        if all_compounds:
-                            compound_counts = pd.Series(all_compounds).value_counts()
-                            st.write("Most used tire compounds:")
-                            for compound, count in compound_counts.items():
-                                st.write(f"- {compound}: {count} times")
-                        
-                        # Display detailed data
-                        st.subheader("Detailed Historical Data")
-                        display_data = historical_data[['Year', 'Driver', 'NumStops', 'Result']].copy()
-                        display_data = display_data.sort_values(['Year', 'Result'])
-                        st.dataframe(display_data)
-                else:
-                    st.warning(f"No historical data found for {selected_team} at {selected_race}")
-                
-        except Exception as e:
-            st.error(f"Error loading historical data: {str(e)}")
-            logger.error(f"Error loading historical data: {str(e)}")
+            except Exception as e:
+                st.error(f"Error loading historical data: {str(e)}")
+                logger.error(f"Error loading historical data: {str(e)}")
 
 if __name__ == "__main__":
     main() 
