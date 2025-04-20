@@ -22,10 +22,17 @@ if 'RAPIDAPI_KEY' in os.environ:
 else:
     # Try to get from Streamlit secrets
     try:
-        RAPIDAPI_KEY = st.secrets['RAPIDAPI_KEY']
-        RAPIDAPI_HOST = st.secrets.get('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
-    except Exception as e:
-        logger.warning(f"Could not load API keys from secrets: {e}")
+        # Check if we're running in Streamlit and have access to secrets
+        if hasattr(st, 'secrets') and 'RAPIDAPI_KEY' in st.secrets:
+            RAPIDAPI_KEY = st.secrets['RAPIDAPI_KEY']
+            RAPIDAPI_HOST = st.secrets.get('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
+            logger.info("Successfully loaded API key from Streamlit secrets")
+        else:
+            logger.warning("No API keys found in Streamlit secrets")
+            RAPIDAPI_KEY = ''
+            RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
+    except Exception:
+        logger.warning("Error accessing Streamlit secrets")
         RAPIDAPI_KEY = ''
         RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
 
