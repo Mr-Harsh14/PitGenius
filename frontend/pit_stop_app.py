@@ -66,16 +66,38 @@ RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
 
 def rapidapi_request(endpoint, params=None):
     """Make a request to the RapidAPI F1 Motorsport Data API."""
-    if not RAPIDAPI_KEY:
+    # Get the API key (try both module level and direct from secrets)
+    api_key = RAPIDAPI_KEY
+    api_host = RAPIDAPI_HOST
+    
+    # If no key, try to get directly from secrets (this works in other functions)
+    if not api_key and hasattr(st, 'secrets'):
+        logger.info("rapidapi_request: Trying to get API key directly from secrets")
+        try:
+            api_key = st.secrets.get('RAPIDAPI_KEY', '')
+            if api_key:
+                logger.info("rapidapi_request: Successfully loaded API key from secrets")
+        except Exception as e:
+            logger.warning(f"rapidapi_request: Error getting API key from secrets: {str(e)}")
+    
+    # Log access method for comparison with news function
+    if api_key:
+        masked_key = api_key[:4] + "..." + api_key[-4:] if len(api_key) > 8 else "***"
+        logger.info(f"rapidapi_request using API key: {masked_key}")
+    else:
+        logger.warning("rapidapi_request: No API key available")
+        return None
+    
+    if not api_key:
         logger.warning("No RapidAPI key configured. Set RAPIDAPI_KEY in .env file.")
         return None
         
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": api_host
     }
     
-    url = f"{RAPIDAPI_BASE_URL}/{endpoint}"
+    url = f"https://{api_host}/{endpoint}"
     logger.info(f"Making API request to: {url}")
     
     try:
@@ -595,14 +617,61 @@ def get_latest_news():
         api_key = RAPIDAPI_KEY
         api_host = RAPIDAPI_HOST
         
+        # Log the initial API key state
+        logger.info(f"Initial API key state (empty = {api_key == ''})")
+        
         # If no key yet, try to get directly from secrets (failsafe for deployed app)
         if not api_key and hasattr(st, 'secrets'):
             logger.info("News function: Trying to get API key directly from secrets")
-            if 'RAPIDAPI_KEY' in st.secrets:
-                api_key = st.secrets['RAPIDAPI_KEY']
-                logger.info("News function: Successfully loaded API key from secrets")
-                if 'RAPIDAPI_HOST' in st.secrets:
-                    api_host = st.secrets['RAPIDAPI_HOST']
+            
+            # First, let's log all available secret keys (safely)
+            try:
+                if hasattr(st.secrets, '_secrets'):
+                    # Log the structure of the secrets (without showing actual values)
+                    secret_keys = list(st.secrets._secrets.keys())
+                    logger.info(f"Available secret keys: {secret_keys}")
+                    
+                    # Check for nested 'RAPIDAPI_KEY' 
+                    if 'RAPIDAPI_KEY' in secret_keys:
+                        logger.info("Found 'RAPIDAPI_KEY' in secret_keys")
+                    # Check for different case variations
+                    elif 'rapidapi_key' in secret_keys:
+                        logger.info("Found 'rapidapi_key' in secret_keys (lowercase)")
+                    elif 'RapidAPI_Key' in secret_keys:
+                        logger.info("Found 'RapidAPI_Key' in secret_keys (mixed case)")
+            except Exception as e:
+                logger.warning(f"Error inspecting secrets structure: {str(e)}")
+            
+            # Try all possible formats and cases of the API key
+            possible_keys = ['RAPIDAPI_KEY', 'rapidapi_key', 'RapidAPI_Key', 'RapidApiKey', 'rapid_api_key']
+            for key_name in possible_keys:
+                try:
+                    logger.info(f"Trying to access secrets with key: {key_name}")
+                    if key_name in st.secrets:
+                        api_key = st.secrets[key_name]
+                        logger.info(f"Found API key using key name: {key_name}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Error accessing secret with key {key_name}: {str(e)}")
+            
+            # Also check if there's a nested structure
+            try:
+                if hasattr(st.secrets, 'api') and hasattr(st.secrets.api, 'RAPIDAPI_KEY'):
+                    api_key = st.secrets.api.RAPIDAPI_KEY
+                    logger.info("Found API key in nested 'api.RAPIDAPI_KEY' structure")
+            except Exception as e:
+                logger.warning(f"Error checking nested secrets: {str(e)}")
+            
+            # If we found a key, look for the host as well
+            if api_key:
+                for host_name in ['RAPIDAPI_HOST', 'rapidapi_host', 'RapidAPI_Host']:
+                    try:
+                        if host_name in st.secrets:
+                            api_host = st.secrets[host_name]
+                            logger.info(f"Found API host using key name: {host_name}")
+                            break
+                    except Exception:
+                        pass
         
         # Log API key status (masked for security)
         if api_key:
