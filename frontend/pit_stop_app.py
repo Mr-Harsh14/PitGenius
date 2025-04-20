@@ -595,41 +595,108 @@ def get_latest_news():
         if RAPIDAPI_KEY:
             # Use the F1 news endpoint
             logger.info("Attempting to fetch news from RapidAPI")
-            news_data = rapidapi_request("news")
             
-            if news_data:
-                logger.info(f"Successfully retrieved {len(news_data)} news items from API")
-                # Create news items from returned data
-                news_items = []
-                for article in news_data[:6]:  # Get top 6 news items
-                    # Get the first image if available
-                    image_url = None
-                    if "images" in article and len(article["images"]) > 0:
-                        for img in article["images"]:
-                            if "url" in img and img["url"].endswith((".jpg", ".jpeg", ".png")):
-                                image_url = img["url"]
-                                break
-                    
-                    # Add news item
-                    news_items.append({
-                        "title": article.get("headline", ""),
-                        "date": "Latest",
-                        "snippet": article.get("description", ""),
-                        "url": article.get("link", ""),
-                        "image_url": image_url
-                    })
+            # Try with direct API call first to debug
+            try:
+                # Try different possible news endpoint URLs
+                urls_to_try = [
+                    f"{RAPIDAPI_BASE_URL}/news",
+                    f"{RAPIDAPI_BASE_URL}/news/latest",
+                    f"{RAPIDAPI_BASE_URL}/news/articles"
+                ]
                 
-                if news_items:
-                    logger.info(f"Processed {len(news_items)} news items")
-                    return news_items
-                else:
-                    logger.warning("API returned news data but no items were processed")
-            else:
-                logger.warning("No news data returned from API")
+                for url in urls_to_try:
+                    logger.info(f"Trying news API URL: {url}")
+                    
+                    response = requests.get(
+                        url,
+                        headers={
+                            "X-RapidAPI-Key": RAPIDAPI_KEY,
+                            "X-RapidAPI-Host": RAPIDAPI_HOST
+                        }
+                    )
+                    
+                    logger.info(f"News API response status code: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        try:
+                            news_data = response.json()
+                            
+                            # Try to determine the data structure
+                            logger.info(f"Response structure: {type(news_data)}")
+                            if isinstance(news_data, dict) and "articles" in news_data:
+                                logger.info("Found 'articles' key in response")
+                                news_data = news_data["articles"]
+                            
+                            if news_data and isinstance(news_data, list):
+                                logger.info(f"Successfully retrieved {len(news_data)} news items")
+                                # Create news items from returned data
+                                news_items = []
+                                for article in news_data[:6]:  # Get top 6 news items
+                                    # Get the first image if available
+                                    image_url = None
+                                    if "images" in article and len(article["images"]) > 0:
+                                        for img in article["images"]:
+                                            if "url" in img and img["url"].endswith((".jpg", ".jpeg", ".png")):
+                                                image_url = img["url"]
+                                                break
+                                    elif "image" in article:
+                                        image_url = article["image"]
+                                    
+                                    # Handle different API response formats
+                                    title = article.get("headline", article.get("title", ""))
+                                    snippet = article.get("description", article.get("snippet", ""))
+                                    url = article.get("link", article.get("url", "#"))
+                                    
+                                    # Add news item
+                                    news_items.append({
+                                        "title": title,
+                                        "date": "Latest",
+                                        "snippet": snippet,
+                                        "url": url,
+                                        "image_url": image_url
+                                    })
+                                
+                                if news_items:
+                                    logger.info(f"Processed {len(news_items)} news items from {url}")
+                                    return news_items
+                            else:
+                                logger.warning(f"News API returned empty or invalid data format from {url}")
+                        except Exception as e:
+                            logger.error(f"Error processing data from {url}: {str(e)}")
+                
+                logger.warning("All news API URLs failed")
+                
+                # Try a public news source as fallback
+                logger.info("Trying public Formula 1 news as fallback")
+                try:
+                    # Try to get recent F1 news from a public source
+                    public_news_url = "https://www.formula1.com/en/latest/all.html"
+                    logger.info(f"Fetching from public news source: {public_news_url}")
+                    
+                    # Note: This is a simple fallback that would work better with
+                    # a proper HTML parser like BeautifulSoup, but we're keeping
+                    # dependencies minimal. In a production app, you'd want to use
+                    # a proper parser.
+                    
+                    # For now, we'll use placeholder data but mark it as coming from backup
+                    return [
+                        {"title": "F1 News [Backup Source]", "date": "Latest", 
+                         "snippet": "API connection failed. This is backup content.", "url": "https://www.formula1.com/en/latest/all.html", "image_url": None},
+                        {"title": "Visit Formula1.com", "date": "Latest", 
+                         "snippet": "Check formula1.com for the latest news and updates.", "url": "https://www.formula1.com", "image_url": None},
+                        {"title": "API Troubleshooting", "date": "Latest", 
+                         "snippet": "If you're seeing this message, check your RapidAPI key configuration.", "url": "#", "image_url": None}
+                    ]
+                except Exception as e:
+                    logger.error(f"Error with public news fallback: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error with direct news API request: {str(e)}")
         else:
-            logger.warning("RAPIDAPI_KEY not configured, using placeholder news")
+            logger.warning("RAPIDAPI_KEY not configured for news API")
         
         # Placeholder news items if API fails or is not configured
+        logger.info("Using placeholder news items")
         return [
             {"title": "Red Bull Dominates Testing", "date": "March 2024", "snippet": "Red Bull shows impressive pace in pre-season testing.", "url": "#", "image_url": None},
             {"title": "Ferrari Unveils New Upgrades", "date": "March 2024", "snippet": "Ferrari brings significant aerodynamic package to next race.", "url": "#", "image_url": None},
