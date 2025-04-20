@@ -12,31 +12,15 @@ import requests
 import json
 from dotenv import load_dotenv
 
+# Configure logging first, before anything else
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Load environment variables
 load_dotenv()
-
-# Configure API keys - check both Streamlit secrets and environment variables
-if 'RAPIDAPI_KEY' in os.environ:
-    RAPIDAPI_KEY = os.environ['RAPIDAPI_KEY']
-    RAPIDAPI_HOST = os.environ.get('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
-else:
-    # Try to get from Streamlit secrets
-    try:
-        # Check if we're running in Streamlit and have access to secrets
-        if hasattr(st, 'secrets') and 'RAPIDAPI_KEY' in st.secrets:
-            RAPIDAPI_KEY = st.secrets['RAPIDAPI_KEY']
-            RAPIDAPI_HOST = st.secrets.get('RAPIDAPI_HOST', 'f1-motorsport-data.p.rapidapi.com')
-            logger.info("Successfully loaded API key from Streamlit secrets")
-        else:
-            logger.warning("No API keys found in Streamlit secrets")
-            RAPIDAPI_KEY = ''
-            RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
-    except Exception:
-        logger.warning("Error accessing Streamlit secrets")
-        RAPIDAPI_KEY = ''
-        RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
-
-RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
 
 # Add project root to path
 if os.environ.get('STREAMLIT_SHARING'):
@@ -47,20 +31,38 @@ else:
 if project_root not in sys.path:
     sys.path.append(project_root)
 
+# Import after adding project root to path
 from src.models.train_random_forest import load_model
 from src.models.predict_pit_stops import get_race_data, prepare_features, predict_race_pit_stops
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Initialize FastF1 cache
 cache_dir = Path(project_root) / 'data' / 'raw' / 'fastf1_cache'
 cache_dir.mkdir(parents=True, exist_ok=True)
 fastf1.Cache.enable_cache(str(cache_dir))
+
+# Set up API configuration
+RAPIDAPI_KEY = ''
+RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
+
+# Try environment variables first
+if 'RAPIDAPI_KEY' in os.environ:
+    logger.info("Loading API key from environment variables")
+    RAPIDAPI_KEY = os.environ['RAPIDAPI_KEY']
+    RAPIDAPI_HOST = os.environ.get('RAPIDAPI_HOST', RAPIDAPI_HOST)
+# Then try Streamlit secrets
+elif hasattr(st, 'secrets'):
+    logger.info("Checking for API key in Streamlit secrets")
+    if 'RAPIDAPI_KEY' in st.secrets:
+        logger.info("Loading API key from Streamlit secrets")
+        RAPIDAPI_KEY = st.secrets['RAPIDAPI_KEY']
+        if 'RAPIDAPI_HOST' in st.secrets:
+            RAPIDAPI_HOST = st.secrets['RAPIDAPI_HOST']
+    else:
+        logger.warning("No RAPIDAPI_KEY found in Streamlit secrets")
+else:
+    logger.warning("No API keys found in environment or Streamlit secrets")
+
+RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
 
 def rapidapi_request(endpoint, params=None):
     """Make a request to the RapidAPI F1 Motorsport Data API."""
