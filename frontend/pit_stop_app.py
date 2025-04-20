@@ -355,18 +355,37 @@ def main():
     Select a race and driver to see predicted pit stops and tire compounds.
     """)
     
-    # Sidebar for inputs
-    st.sidebar.header("Race Selection")
+    # Move tabs to sidebar as main navigation
+    st.sidebar.title("Navigation")
+    app_mode = st.sidebar.radio("", ["🔮 Predictions", "📊 Historical Analysis"])
+    
+    # Sidebar info/branding
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### About")
+    st.sidebar.info(
+        "PitGenius uses machine learning to predict F1 pit stop strategies "
+        "based on historical data from the 2022-2023 seasons."
+    )
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Developed with")
+    st.sidebar.markdown("- FastF1 🏎️")
+    st.sidebar.markdown("- Streamlit 📊")
+    st.sidebar.markdown("- Scikit-learn 🤖")
     
     # Get available races for 2024
     schedule = fastf1.get_event_schedule(2024)
     races = schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
     
-    # Race selection
-    selected_race = st.sidebar.selectbox(
-        "Select Race",
-        races
-    )
+    # Move race, team and driver selection to main page
+    # Create 3 columns for selections
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Race selection
+        selected_race = st.selectbox(
+            "Select Race",
+            races
+        )
     
     # Predefined list of 2024 F1 drivers
     drivers_2024 = [
@@ -392,9 +411,6 @@ def main():
         {'code': 'HUL', 'name': 'Nico Hulkenberg', 'team': 'Haas F1 Team'}
     ]
     
-    # Driver selection with team grouping
-    st.sidebar.header("Driver Selection")
-    
     # Group drivers by team
     teams = {}
     for driver in drivers_2024:
@@ -402,24 +418,28 @@ def main():
             teams[driver['team']] = []
         teams[driver['team']].append(driver)
     
-    # Create team selection first
-    selected_team = st.sidebar.selectbox(
-        "Select Team",
-        options=list(teams.keys())
-    )
+    with col2:
+        # Create team selection
+        selected_team = st.selectbox(
+            "Select Team",
+            options=list(teams.keys())
+        )
     
     # Then filter drivers by selected team
     team_drivers = teams[selected_team]
-    selected_driver = st.sidebar.selectbox(
-        "Select Driver",
-        options=[d['code'] for d in team_drivers],
-        format_func=lambda x: next(d['name'] for d in team_drivers if d['code'] == x)
-    )
     
-    # Create tabs
-    tab1, tab2 = st.tabs(["🔮 Predictions", "📊 Historical Analysis"])
+    with col3:
+        selected_driver = st.selectbox(
+            "Select Driver",
+            options=[d['code'] for d in team_drivers],
+            format_func=lambda x: next(d['name'] for d in team_drivers if d['code'] == x)
+        )
     
-    with tab1:
+    # Add some spacing
+    st.markdown("---")
+    
+    # Show appropriate content based on the selected tab in sidebar
+    if app_mode == "🔮 Predictions":
         try:
             # Load model and make predictions
             with st.spinner("Making predictions..."):
@@ -498,7 +518,7 @@ def main():
             st.error(f"Error loading race data: {str(e)}")
             logger.error(f"Error in Streamlit app: {str(e)}")
     
-    with tab2:
+    elif app_mode == "📊 Historical Analysis":
         try:
             with st.spinner("Loading historical data..."):
                 # Get historical strategies
