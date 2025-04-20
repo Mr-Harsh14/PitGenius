@@ -591,112 +591,166 @@ def get_team_standings():
 def get_latest_news():
     """Get latest F1 news using RapidAPI."""
     try:
+        # Get API key - first try module level, then try to get directly from secrets
+        api_key = RAPIDAPI_KEY
+        api_host = RAPIDAPI_HOST
+        
+        # If no key yet, try to get directly from secrets (failsafe for deployed app)
+        if not api_key and hasattr(st, 'secrets'):
+            logger.info("News function: Trying to get API key directly from secrets")
+            if 'RAPIDAPI_KEY' in st.secrets:
+                api_key = st.secrets['RAPIDAPI_KEY']
+                logger.info("News function: Successfully loaded API key from secrets")
+                if 'RAPIDAPI_HOST' in st.secrets:
+                    api_host = st.secrets['RAPIDAPI_HOST']
+        
+        # Log API key status (masked for security)
+        if api_key:
+            masked_key = api_key[:4] + "..." + api_key[-4:] if len(api_key) > 8 else "***"
+            logger.info(f"News function using API key: {masked_key}")
+        else:
+            logger.warning("No API key available for news function")
+        
         # Try to get from RapidAPI
-        if RAPIDAPI_KEY:
-            # Use the F1 news endpoint
-            logger.info("Attempting to fetch news from RapidAPI")
+        if api_key:
+            # Try different possible news endpoint URLs
+            urls_to_try = [
+                f"https://{api_host}/news",
+                f"https://{api_host}/news/latest",
+                f"https://{api_host}/news/articles"
+            ]
             
-            # Try with direct API call first to debug
-            try:
-                # Try different possible news endpoint URLs
-                urls_to_try = [
-                    f"{RAPIDAPI_BASE_URL}/news",
-                    f"{RAPIDAPI_BASE_URL}/news/latest",
-                    f"{RAPIDAPI_BASE_URL}/news/articles"
-                ]
+            for url in urls_to_try:
+                logger.info(f"Trying news API URL: {url}")
                 
-                for url in urls_to_try:
-                    logger.info(f"Trying news API URL: {url}")
-                    
-                    response = requests.get(
-                        url,
-                        headers={
-                            "X-RapidAPI-Key": RAPIDAPI_KEY,
-                            "X-RapidAPI-Host": RAPIDAPI_HOST
-                        }
-                    )
-                    
-                    logger.info(f"News API response status code: {response.status_code}")
+                response = requests.get(
+                    url,
+                    headers={
+                        "X-RapidAPI-Key": api_key,
+                        "X-RapidAPI-Host": api_host
+                    }
+                )
+                
+                logger.info(f"News API response status code: {response.status_code}")
+                
+                if response.status_code == 200:
+                    try:
+                        news_data = response.json()
+                        
+                        # Try to determine the data structure
+                        logger.info(f"Response structure: {type(news_data)}")
+                        if isinstance(news_data, dict) and "articles" in news_data:
+                            logger.info("Found 'articles' key in response")
+                            news_data = news_data["articles"]
+                        
+                        if news_data and isinstance(news_data, list):
+                            logger.info(f"Successfully retrieved {len(news_data)} news items")
+                            # Create news items from returned data
+                            news_items = []
+                            for article in news_data[:6]:  # Get top 6 news items
+                                # Get the first image if available
+                                image_url = None
+                                if "images" in article and len(article["images"]) > 0:
+                                    for img in article["images"]:
+                                        if "url" in img and img["url"].endswith((".jpg", ".jpeg", ".png")):
+                                            image_url = img["url"]
+                                            break
+                                elif "image" in article:
+                                    image_url = article["image"]
+                                
+                                # Handle different API response formats
+                                title = article.get("headline", article.get("title", ""))
+                                snippet = article.get("description", article.get("snippet", ""))
+                                url = article.get("link", article.get("url", "#"))
+                                
+                                # Add news item
+                                news_items.append({
+                                    "title": title,
+                                    "date": "Latest",
+                                    "snippet": snippet,
+                                    "url": url,
+                                    "image_url": image_url
+                                })
+                            
+                            if news_items:
+                                logger.info(f"Processed {len(news_items)} news items from {url}")
+                                return news_items
+                        else:
+                            logger.warning(f"News API returned empty or invalid data format from {url}")
+                    except Exception as e:
+                        logger.error(f"Error processing data from {url}: {str(e)}")
+            
+            logger.warning("All news API URLs failed")
+            
+            # Get public fallback content
+            try:
+                # Try to get recent F1 news from a public source
+                logger.info("Checking if F1 public news API is available as fallback")
+                try:
+                    # Try a simpler API first
+                    logger.info("Trying Formula 1 news API")
+                    f1_api_url = "https://ergast.com/api/f1/current/last/results.json"
+                    response = requests.get(f1_api_url)
                     
                     if response.status_code == 200:
-                        try:
-                            news_data = response.json()
+                        data = response.json()
+                        race_info = data.get('MRData', {}).get('RaceTable', {}).get('Races', [{}])[0]
+                        
+                        if race_info:
+                            race_name = race_info.get('raceName', 'Formula 1 Race')
+                            circuit = race_info.get('Circuit', {}).get('circuitName', 'Unknown Circuit')
+                            date = race_info.get('date', 'Recent')
                             
-                            # Try to determine the data structure
-                            logger.info(f"Response structure: {type(news_data)}")
-                            if isinstance(news_data, dict) and "articles" in news_data:
-                                logger.info("Found 'articles' key in response")
-                                news_data = news_data["articles"]
+                            results = race_info.get('Results', [])
+                            news_items = []
                             
-                            if news_data and isinstance(news_data, list):
-                                logger.info(f"Successfully retrieved {len(news_data)} news items")
-                                # Create news items from returned data
-                                news_items = []
-                                for article in news_data[:6]:  # Get top 6 news items
-                                    # Get the first image if available
-                                    image_url = None
-                                    if "images" in article and len(article["images"]) > 0:
-                                        for img in article["images"]:
-                                            if "url" in img and img["url"].endswith((".jpg", ".jpeg", ".png")):
-                                                image_url = img["url"]
-                                                break
-                                    elif "image" in article:
-                                        image_url = article["image"]
+                            # Create news items from race results
+                            if results:
+                                winner = results[0].get('Driver', {})
+                                winner_name = f"{winner.get('givenName', '')} {winner.get('familyName', '')}"
+                                
+                                news_items.append({
+                                    "title": f"{winner_name} Wins {race_name}",
+                                    "date": date,
+                                    "snippet": f"{winner_name} secured victory at the {circuit}. Check the full race results.",
+                                    "url": "https://www.formula1.com/en/results.html",
+                                    "image_url": None
+                                })
+                                
+                                # Add podium finishers
+                                for i, result in enumerate(results[1:3], 2):
+                                    driver = result.get('Driver', {})
+                                    driver_name = f"{driver.get('givenName', '')} {driver.get('familyName', '')}"
                                     
-                                    # Handle different API response formats
-                                    title = article.get("headline", article.get("title", ""))
-                                    snippet = article.get("description", article.get("snippet", ""))
-                                    url = article.get("link", article.get("url", "#"))
-                                    
-                                    # Add news item
                                     news_items.append({
-                                        "title": title,
-                                        "date": "Latest",
-                                        "snippet": snippet,
-                                        "url": url,
-                                        "image_url": image_url
+                                        "title": f"{driver_name} Finishes P{i} at {race_name}",
+                                        "date": date,
+                                        "snippet": f"{driver_name} secured a P{i} finish at the {circuit}.",
+                                        "url": "https://www.formula1.com/en/results.html",
+                                        "image_url": None
                                     })
                                 
-                                if news_items:
-                                    logger.info(f"Processed {len(news_items)} news items from {url}")
-                                    return news_items
-                            else:
-                                logger.warning(f"News API returned empty or invalid data format from {url}")
-                        except Exception as e:
-                            logger.error(f"Error processing data from {url}: {str(e)}")
-                
-                logger.warning("All news API URLs failed")
-                
-                # Try a public news source as fallback
-                logger.info("Trying public Formula 1 news as fallback")
-                try:
-                    # Try to get recent F1 news from a public source
-                    public_news_url = "https://www.formula1.com/en/latest/all.html"
-                    logger.info(f"Fetching from public news source: {public_news_url}")
-                    
-                    # Note: This is a simple fallback that would work better with
-                    # a proper HTML parser like BeautifulSoup, but we're keeping
-                    # dependencies minimal. In a production app, you'd want to use
-                    # a proper parser.
-                    
-                    # For now, we'll use placeholder data but mark it as coming from backup
-                    return [
-                        {"title": "F1 News [Backup Source]", "date": "Latest", 
-                         "snippet": "API connection failed. This is backup content.", "url": "https://www.formula1.com/en/latest/all.html", "image_url": None},
-                        {"title": "Visit Formula1.com", "date": "Latest", 
-                         "snippet": "Check formula1.com for the latest news and updates.", "url": "https://www.formula1.com", "image_url": None},
-                        {"title": "API Troubleshooting", "date": "Latest", 
-                         "snippet": "If you're seeing this message, check your RapidAPI key configuration.", "url": "#", "image_url": None}
-                    ]
+                                return news_items
                 except Exception as e:
-                    logger.error(f"Error with public news fallback: {str(e)}")
+                    logger.error(f"Error with F1 public API fallback: {str(e)}")
+                
+                # Use placeholder news as final fallback
+                public_news_url = "https://www.formula1.com/en/latest/all.html"
+                logger.info(f"Using placeholder news with link to: {public_news_url}")
+                
+                return [
+                    {"title": "F1 News [Fallback]", "date": "Latest", 
+                     "snippet": "API connection failed. Showing backup content.", "url": "https://www.formula1.com/en/latest/all.html", "image_url": None},
+                    {"title": "Visit Formula1.com", "date": "Latest", 
+                     "snippet": "Check formula1.com for the latest news and updates.", "url": "https://www.formula1.com", "image_url": None},
+                    {"title": "API Troubleshooting", "date": "Latest", 
+                     "snippet": "If you're seeing this message, check your RapidAPI key configuration.", "url": "#", "image_url": None}
+                ]
             except Exception as e:
-                logger.error(f"Error with direct news API request: {str(e)}")
-        else:
-            logger.warning("RAPIDAPI_KEY not configured for news API")
+                logger.error(f"Error with all news fallbacks: {str(e)}")
         
-        # Placeholder news items if API fails or is not configured
-        logger.info("Using placeholder news items")
+        # Final fallback - hardcoded news items
+        logger.info("Using hardcoded news items as final fallback")
         return [
             {"title": "Red Bull Dominates Testing", "date": "March 2024", "snippet": "Red Bull shows impressive pace in pre-season testing.", "url": "#", "image_url": None},
             {"title": "Ferrari Unveils New Upgrades", "date": "March 2024", "snippet": "Ferrari brings significant aerodynamic package to next race.", "url": "#", "image_url": None},
