@@ -506,13 +506,59 @@ def get_driver_standings():
             if standings_data and "standings" in standings_data:
                 standings = []
                 
+                # Debug: Log the first entry's structure to see where team info is
+                if "entries" in standings_data["standings"] and standings_data["standings"]["entries"]:
+                    first_entry = standings_data["standings"]["entries"][0]
+                    logger.info(f"First entry structure: {json.dumps(first_entry, indent=2)[:500]}...")
+                
                 for entry in standings_data["standings"].get("entries", []):
                     if "athlete" in entry:
                         driver = entry.get("athlete", {})
+                        
+                        # Get team information - check all possible locations
+                        team_name = ""
+                        # Method 1: Check in the athlete object
+                        if "team" in driver:
+                            team_name = driver.get("team", {}).get("displayName", "")
+                        # Method 2: Check directly in the entry
+                        elif "team" in entry:
+                            team_name = entry.get("team", {}).get("displayName", "")
+                        # Method 3: Try to find it in stats
+                        elif "stats" in entry:
+                            for stat in entry["stats"]:
+                                if stat.get("name", "").lower() in ["team", "constructor", "constructors"]:
+                                    team_name = stat.get("displayValue", "")
+                                    break
+                        
+                        # If still not found, look through the entire entry for any team reference
+                        if not team_name:
+                            # Convert to string and look for team indicators
+                            entry_str = str(entry)
+                            if "McLaren" in entry_str:
+                                team_name = "McLaren"
+                            elif "Red Bull" in entry_str:
+                                team_name = "Red Bull"
+                            elif "Ferrari" in entry_str:
+                                team_name = "Ferrari"
+                            elif "Mercedes" in entry_str:
+                                team_name = "Mercedes"
+                            elif "Williams" in entry_str:
+                                team_name = "Williams"
+                            elif "Aston Martin" in entry_str:
+                                team_name = "Aston Martin"
+                            elif "Haas" in entry_str:
+                                team_name = "Haas"
+                            elif "Alpine" in entry_str:
+                                team_name = "Alpine"
+                            elif "Sauber" in entry_str:
+                                team_name = "Sauber"
+                        
+                        logger.info(f"Driver: {driver.get('abbreviation', '')}, Team found: {team_name}")
+                        
                         standings.append({
                             "Position": entry.get("stats", [])[0].get("displayValue", "-") if entry.get("stats") else "-",
                             "Driver": driver.get("abbreviation", ""),
-                            "Team": driver.get("team", {}).get("displayName", ""),
+                            "Team": team_name,
                             "Points": entry.get("stats", [])[1].get("displayValue", "0") if len(entry.get("stats", [])) > 1 else "0"
                         })
                 
