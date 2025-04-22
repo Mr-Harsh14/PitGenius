@@ -44,13 +44,9 @@ fastf1.Cache.enable_cache(str(cache_dir))
 RAPIDAPI_KEY = ''
 RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
 
-# Try environment variables first
-if 'RAPIDAPI_KEY' in os.environ:
-    logger.info("Loading API key from environment variables")
-    RAPIDAPI_KEY = os.environ['RAPIDAPI_KEY']
-    RAPIDAPI_HOST = os.environ.get('RAPIDAPI_HOST', RAPIDAPI_HOST)
+
 # Then try Streamlit secrets
-elif hasattr(st, 'secrets'):
+if hasattr(st, 'secrets'):
     logger.info("Checking for API key in Streamlit secrets")
     if 'RAPIDAPI_KEY' in st.secrets:
         logger.info("Loading API key from Streamlit secrets")
@@ -59,6 +55,11 @@ elif hasattr(st, 'secrets'):
             RAPIDAPI_HOST = st.secrets['RAPIDAPI_HOST']
     else:
         logger.warning("No RAPIDAPI_KEY found in Streamlit secrets")
+# Try environment variables first
+# elif 'RAPIDAPI_KEY' in os.environ:
+#     logger.info("Loading API key from environment variables")
+#     RAPIDAPI_KEY = os.environ['RAPIDAPI_KEY']
+#     RAPIDAPI_HOST = os.environ.get('RAPIDAPI_HOST', RAPIDAPI_HOST)
 else:
     logger.warning("No API keys found in environment or Streamlit secrets")
 
