@@ -44,23 +44,64 @@ fastf1.Cache.enable_cache(str(cache_dir))
 RAPIDAPI_KEY = ''
 RAPIDAPI_HOST = 'f1-motorsport-data.p.rapidapi.com'
 
-# Try environment variables first
-if 'RAPIDAPI_KEY' in os.environ:
-    logger.info("Loading API key from environment variables")
-    RAPIDAPI_KEY = os.environ['RAPIDAPI_KEY']
-    RAPIDAPI_HOST = os.environ.get('RAPIDAPI_HOST', RAPIDAPI_HOST)
-# Then try Streamlit secrets
-elif hasattr(st, 'secrets'):
-    logger.info("Checking for API key in Streamlit secrets")
-    if 'RAPIDAPI_KEY' in st.secrets:
-        logger.info("Loading API key from Streamlit secrets")
-        RAPIDAPI_KEY = st.secrets['RAPIDAPI_KEY']
-        if 'RAPIDAPI_HOST' in st.secrets:
-            RAPIDAPI_HOST = st.secrets['RAPIDAPI_HOST']
+# Debugging for hosted app
+try:
+    # For hosted apps: explicitly log all available secrets (safely)
+    if hasattr(st, 'secrets'):
+        logger.info("Streamlit secrets are available")
+        # Check what's in the secrets
+        if hasattr(st.secrets, '_secrets'):
+            # Only log keys, not values for security
+            secret_keys = list(st.secrets._secrets.keys())
+            logger.info(f"Available secret keys: {secret_keys}")
+        else:
+            logger.info("Secrets available but no _secrets attribute")
+        
+        # Try direct access with detailed error reporting
+        try:
+            # First try standard access
+            if 'RAPIDAPI_KEY' in st.secrets:
+                RAPIDAPI_KEY = st.secrets['RAPIDAPI_KEY']
+                logger.info("Successfully loaded RAPIDAPI_KEY from st.secrets dict access")
+            # Then try attribute access
+            elif hasattr(st.secrets, 'RAPIDAPI_KEY'):
+                RAPIDAPI_KEY = st.secrets.RAPIDAPI_KEY
+                logger.info("Successfully loaded RAPIDAPI_KEY from st.secrets attribute access")
+            # Then try nested access if it might be in a section
+            elif hasattr(st.secrets, 'rapidapi') and hasattr(st.secrets.rapidapi, 'key'):
+                RAPIDAPI_KEY = st.secrets.rapidapi.key
+                logger.info("Successfully loaded RAPIDAPI_KEY from nested st.secrets.rapidapi.key")
+            else:
+                logger.warning("RAPIDAPI_KEY not found in any secrets location")
+        except Exception as e:
+            logger.error(f"Error accessing RAPIDAPI_KEY from secrets: {str(e)}")
     else:
-        logger.warning("No RAPIDAPI_KEY found in Streamlit secrets")
+        logger.warning("Streamlit secrets not available")
+    
+    # Check all possible environment variable formats as backup
+    for env_var in ['RAPIDAPI_KEY', 'rapidapi_key', 'RAPID_API_KEY']:
+        if env_var in os.environ and not RAPIDAPI_KEY:
+            RAPIDAPI_KEY = os.environ[env_var]
+            logger.info(f"Loaded API key from environment variable {env_var}")
+            break
+except Exception as e:
+    logger.error(f"Error during secrets configuration: {str(e)}")
+
+# Host configuration (similar pattern)
+try:
+    if hasattr(st, 'secrets') and 'RAPIDAPI_HOST' in st.secrets:
+        RAPIDAPI_HOST = st.secrets['RAPIDAPI_HOST']
+    elif 'RAPIDAPI_HOST' in os.environ:
+        RAPIDAPI_HOST = os.environ['RAPIDAPI_HOST']
+except Exception as e:
+    logger.warning(f"Error loading RAPIDAPI_HOST: {str(e)}")
+
+# Log API configuration status (masked key for security)
+if RAPIDAPI_KEY:
+    masked_key = RAPIDAPI_KEY[:4] + "..." + RAPIDAPI_KEY[-4:] if len(RAPIDAPI_KEY) > 8 else "***"
+    logger.info(f"API configured with key: {masked_key} and host: {RAPIDAPI_HOST}")
 else:
-    logger.warning("No API keys found in environment or Streamlit secrets")
+    logger.warning("No API key configured - API features will not work")
 
 RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
 
@@ -70,28 +111,26 @@ def rapidapi_request(endpoint, params=None):
     api_key = RAPIDAPI_KEY
     api_host = RAPIDAPI_HOST
     
-    # If no key, try to get directly from secrets (this works in other functions)
+    # For hosted environments: try to get directly from secrets again if needed
     if not api_key and hasattr(st, 'secrets'):
-        logger.info("rapidapi_request: Trying to get API key directly from secrets")
         try:
-            api_key = st.secrets.get('RAPIDAPI_KEY', '')
-            if api_key:
-                logger.info("rapidapi_request: Successfully loaded API key from secrets")
+            # Try all common formats
+            for key_name in ['RAPIDAPI_KEY', 'rapidapi_key', 'RapidAPI_Key']:
+                if key_name in st.secrets:
+                    api_key = st.secrets[key_name]
+                    logger.info(f"API request using key from secrets ({key_name})")
+                    break
         except Exception as e:
-            logger.warning(f"rapidapi_request: Error getting API key from secrets: {str(e)}")
+            logger.warning(f"Failed to retrieve API key from secrets during request: {e}")
     
-    # Log access method for comparison with news function
+    # Log access method for debugging
     if api_key:
         masked_key = api_key[:4] + "..." + api_key[-4:] if len(api_key) > 8 else "***"
-        logger.info(f"rapidapi_request using API key: {masked_key}")
+        logger.info(f"API request using key: {masked_key}")
     else:
-        logger.warning("rapidapi_request: No API key available")
+        logger.warning("No API key available for request")
         return None
     
-    if not api_key:
-        logger.warning("No RapidAPI key configured. Set RAPIDAPI_KEY in .env file.")
-        return None
-        
     headers = {
         "X-RapidAPI-Key": api_key,
         "X-RapidAPI-Host": api_host
@@ -101,10 +140,12 @@ def rapidapi_request(endpoint, params=None):
     logger.info(f"Making API request to: {url}")
     
     try:
+        # Add timeout to prevent hanging requests
         response = requests.get(
             url,
             headers=headers,
-            params=params
+            params=params,
+            timeout=10  # 10 second timeout
         )
         
         # Log the response status
@@ -128,6 +169,9 @@ def rapidapi_request(endpoint, params=None):
             logger.error(f"Response content: {response.text[:100]}...")
             return None
             
+    except requests.exceptions.Timeout:
+        logger.error(f"API request to {url} timed out after 10 seconds")
+        return None
     except requests.exceptions.RequestException as e:
         logger.error(f"API request failed: {str(e)}")
         return None
@@ -1223,6 +1267,234 @@ def create_dashboard():
         
         st.markdown('</div>', unsafe_allow_html=True)
 
+def test_api_connectivity():
+    """Test API connectivity and display detailed diagnostic information."""
+    st.markdown("### API Diagnostics")
+    
+    # Check API configuration
+    with st.expander("API Configuration", expanded=True):
+        st.write("Checking API configuration...")
+        
+        # Show current global API variables
+        st.subheader("1. Current API Configuration")
+        masked_key = RAPIDAPI_KEY[:4] + "..." + RAPIDAPI_KEY[-4:] if RAPIDAPI_KEY and len(RAPIDAPI_KEY) > 8 else "None or invalid"
+        st.code(f"""
+RAPIDAPI_KEY: {masked_key}
+RAPIDAPI_HOST: {RAPIDAPI_HOST if RAPIDAPI_HOST else "None"}
+""")
+        
+        # Check environment variables
+        st.subheader("2. Environment Variables")
+        has_env_key = "RAPIDAPI_KEY" in os.environ
+        has_env_host = "RAPIDAPI_HOST" in os.environ
+        
+        if has_env_key:
+            st.success("✅ RAPIDAPI_KEY found in environment variables")
+            env_masked_key = os.environ["RAPIDAPI_KEY"][:4] + "..." + os.environ["RAPIDAPI_KEY"][-4:] if len(os.environ["RAPIDAPI_KEY"]) > 8 else "***"
+            st.code(f"Key from env: {env_masked_key}")
+        else:
+            st.warning("⚠️ RAPIDAPI_KEY not found in environment variables")
+        
+        if has_env_host:
+            st.success(f"✅ RAPIDAPI_HOST found in environment variables: {os.environ['RAPIDAPI_HOST']}")
+        else:
+            st.warning("⚠️ RAPIDAPI_HOST not found in environment variables")
+        
+        # Check if secrets are available
+        st.subheader("3. Streamlit Secrets")
+        if hasattr(st, 'secrets'):
+            st.success("✅ Streamlit secrets are available")
+            
+            # Check if API key is in secrets
+            if 'RAPIDAPI_KEY' in st.secrets:
+                st.success("✅ RAPIDAPI_KEY found in secrets")
+                secrets_masked_key = st.secrets['RAPIDAPI_KEY'][:4] + "..." + st.secrets['RAPIDAPI_KEY'][-4:] if len(st.secrets['RAPIDAPI_KEY']) > 8 else "***"
+                st.code(f"Key from secrets: {secrets_masked_key}")
+            else:
+                st.error("❌ RAPIDAPI_KEY not found in secrets with direct access")
+                
+                # Try lowercase
+                if 'rapidapi_key' in st.secrets:
+                    st.success("✅ rapidapi_key (lowercase) found in secrets")
+                    secrets_masked_key = st.secrets['rapidapi_key'][:4] + "..." + st.secrets['rapidapi_key'][-4:] if len(st.secrets['rapidapi_key']) > 8 else "***"
+                    st.code(f"Key from secrets (lowercase): {secrets_masked_key}")
+                
+                # Try accessing as attribute
+                try:
+                    if hasattr(st.secrets, 'RAPIDAPI_KEY'):
+                        st.success("✅ RAPIDAPI_KEY found in secrets as attribute")
+                        secrets_masked_key = st.secrets.RAPIDAPI_KEY[:4] + "..." + st.secrets.RAPIDAPI_KEY[-4:] if len(st.secrets.RAPIDAPI_KEY) > 8 else "***"
+                        st.code(f"Key from secrets (attribute): {secrets_masked_key}")
+                    elif hasattr(st.secrets, 'rapidapi_key'):
+                        st.success("✅ rapidapi_key (lowercase) found in secrets as attribute")
+                        secrets_masked_key = st.secrets.rapidapi_key[:4] + "..." + st.secrets.rapidapi_key[-4:] if len(st.secrets.rapidapi_key) > 8 else "***"
+                        st.code(f"Key from secrets (lowercase attribute): {secrets_masked_key}")
+                except Exception as e:
+                    st.error(f"Error accessing secret as attribute: {str(e)}")
+                
+                # Show what keys are available
+                try:
+                    if hasattr(st.secrets, '_secrets'):
+                        available_keys = list(st.secrets._secrets.keys())
+                        if available_keys:
+                            st.info("Available secret keys:")
+                            st.code(available_keys)
+                        else:
+                            st.warning("No secret keys found in _secrets")
+                    
+                    # Try showing the raw directory structure of the secrets object
+                    st.info("Secrets structure:")
+                    secrets_dict = {}
+                    
+                    # Attempt to show all accessible attributes and items
+                    try:
+                        # Try to get the dict representation
+                        if hasattr(st.secrets, '__dict__'):
+                            secret_attrs = {k: "HIDDEN" if "key" in k.lower() else v 
+                                           for k, v in st.secrets.__dict__.items() 
+                                           if not k.startswith('_')}
+                            st.code(f"Attributes: {secret_attrs}")
+                        
+                        # Try standard keys
+                        for key in ['RAPIDAPI_KEY', 'rapidapi_key', 'RapidAPI_Key', 'RAPIDAPI_HOST', 'rapidapi_host']:
+                            try:
+                                # Try as dictionary access
+                                if key in st.secrets:
+                                    value = "HIDDEN" if 'key' in key.lower() else st.secrets[key]
+                                    secrets_dict[f"{key} (dict)"] = value
+                                
+                                # Try as attribute
+                                if hasattr(st.secrets, key):
+                                    value = "HIDDEN" if 'key' in key.lower() else getattr(st.secrets, key)
+                                    secrets_dict[f"{key} (attr)"] = value
+                            except Exception as e:
+                                secrets_dict[f"{key} (ERROR)"] = str(e)
+                        
+                        st.code(secrets_dict)
+                    except Exception as e:
+                        st.error(f"Error inspecting secrets: {str(e)}")
+                    
+                except Exception as e:
+                    st.error(f"Error listing available secrets: {str(e)}")
+            
+            # Check for host in secrets
+            if 'RAPIDAPI_HOST' in st.secrets:
+                st.success(f"✅ RAPIDAPI_HOST found in secrets: {st.secrets['RAPIDAPI_HOST']}")
+            else:
+                st.warning("⚠️ RAPIDAPI_HOST not found in secrets with direct access")
+                # Try lowercase and attribute access
+                if 'rapidapi_host' in st.secrets:
+                    st.success(f"✅ rapidapi_host (lowercase) found in secrets: {st.secrets['rapidapi_host']}")
+                elif hasattr(st.secrets, 'RAPIDAPI_HOST'):
+                    st.success(f"✅ RAPIDAPI_HOST found in secrets as attribute: {st.secrets.RAPIDAPI_HOST}")
+                elif hasattr(st.secrets, 'rapidapi_host'):
+                    st.success(f"✅ rapidapi_host found in secrets as attribute: {st.secrets.rapidapi_host}")
+        else:
+            st.error("❌ Streamlit secrets not available")
+    
+    # Test API endpoints
+    with st.expander("API Endpoint Tests", expanded=True):
+        st.write("Testing API endpoints...")
+        
+        # Test a simple endpoint first
+        if st.button("Test API Connection"):
+            with st.spinner("Testing API connection..."):
+                try:
+                    # Try a simple endpoint
+                    response = requests.get(
+                        "https://f1-motorsport-data.p.rapidapi.com/seasons",
+                        headers={
+                            "X-RapidAPI-Key": RAPIDAPI_KEY,
+                            "X-RapidAPI-Host": RAPIDAPI_HOST
+                        },
+                        timeout=10
+                    )
+                    
+                    st.write(f"Request sent with:")
+                    st.code(f"""
+Host: {RAPIDAPI_HOST}
+Key: {RAPIDAPI_KEY[:4] + "..." + RAPIDAPI_KEY[-4:] if RAPIDAPI_KEY and len(RAPIDAPI_KEY) > 8 else "None"}
+                    """)
+                    
+                    if response.status_code == 200:
+                        st.success(f"✅ API connection successful! Status: {response.status_code}")
+                        data = response.json()
+                        st.json(data)
+                    else:
+                        st.error(f"❌ API connection failed! Status: {response.status_code}")
+                        st.write("Response content:")
+                        st.code(response.text[:500] + "..." if len(response.text) > 500 else response.text)
+                except Exception as e:
+                    st.error(f"❌ API connection error: {str(e)}")
+                    st.write("Exception details:")
+                    import traceback
+                    st.code(traceback.format_exc())
+        
+        # Direct API key input test
+        st.subheader("Test with Manual API Key")
+        st.markdown("If your configured API key isn't working, you can test with a direct input:")
+        
+        with st.form("manual_api_test"):
+            manual_api_key = st.text_input("RapidAPI Key", type="password")
+            manual_host = st.text_input("Host", value="f1-motorsport-data.p.rapidapi.com")
+            submitted = st.form_submit_button("Test Connection")
+            
+            if submitted and manual_api_key:
+                with st.spinner("Testing connection with provided API key..."):
+                    try:
+                        response = requests.get(
+                            f"https://{manual_host}/seasons",
+                            headers={
+                                "X-RapidAPI-Key": manual_api_key,
+                                "X-RapidAPI-Host": manual_host
+                            },
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            st.success(f"✅ Manual API key connection successful! Status: {response.status_code}")
+                            data = response.json()
+                            st.json(data)
+                        else:
+                            st.error(f"❌ Manual API key connection failed! Status: {response.status_code}")
+                            st.write("Response content:")
+                            st.code(response.text[:500] + "..." if len(response.text) > 500 else response.text)
+                    except Exception as e:
+                        st.error(f"❌ Manual API connection error: {str(e)}")
+                        st.code(traceback.format_exc())
+    
+    # Troubleshooting guide
+    with st.expander("Troubleshooting", expanded=False):
+        st.write("### Common Issues")
+        st.markdown("""
+        1. **API Key Not Found**: Check that your secrets.toml file has the correct format:
+           ```
+           RAPIDAPI_KEY = "your_api_key_here"
+           RAPIDAPI_HOST = "f1-motorsport-data.p.rapidapi.com"
+           ```
+           
+        2. **API Rate Limits**: Your API key might have exceeded its rate limits. Check your RapidAPI dashboard.
+        
+        3. **Network Restrictions**: Some hosted environments may have restrictions on outgoing network requests.
+        
+        4. **Case Sensitivity**: Ensure the key names match exactly (RAPIDAPI_KEY vs rapidapi_key).
+        
+        5. **Secrets Format**: In Streamlit Cloud, secrets should be entered without quotes:
+           ```
+           RAPIDAPI_KEY = your_api_key_here
+           RAPIDAPI_HOST = f1-motorsport-data.p.rapidapi.com
+           ```
+        """)
+        
+        # Show re-config instructions
+        st.write("### How to Configure API Key")
+        st.markdown("""
+           RAPIDAPI_KEY = "your_api_key_here"
+           RAPIDAPI_HOST = "f1-motorsport-data.p.rapidapi.com"
+           ```
+        5. Save changes and redeploy the app
+        """)
+
 def main():
     st.set_page_config(page_title="PitGenius - F1 Pit Stop Predictions", layout="wide")
     
@@ -1237,8 +1509,9 @@ def main():
     st.sidebar.title("Navigation")
     app_mode = st.sidebar.radio(
         "Navigation Options",  # Added label for accessibility
-        ["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis"],
-        index=["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis"].index(st.session_state.app_mode),
+        ["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis", "⚙️ API Diagnostics"],
+        index=["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis", "⚙️ API Diagnostics"].index(st.session_state.app_mode) 
+        if st.session_state.app_mode in ["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis", "⚙️ API Diagnostics"] else 0,
         label_visibility="collapsed"  # Hide the label but keep it for accessibility
     )
     
@@ -1272,10 +1545,10 @@ def main():
                         st.write(f"API key source: {'Streamlit Secrets' if 'RAPIDAPI_KEY' not in os.environ else 'Environment Variable'}")
                         
                     # Test the connection
-                    test_response = rapidapi_request("news")
+                    test_response = rapidapi_request("seasons")
                     if test_response:
                         st.success("✅ RapidAPI Connection Successful")
-                        st.write(f"Retrieved {len(test_response)} news items")
+                        st.write(f"Retrieved data: {str(test_response)[:200]}...")
                     else:
                         st.error("❌ RapidAPI Connection Failed")
                         # Show more diagnostic information
@@ -1284,7 +1557,7 @@ def main():
                         # Test with basic request
                         try:
                             simple_response = requests.get(
-                                f"{RAPIDAPI_BASE_URL}/seasons",
+                                f"https://{RAPIDAPI_HOST}/seasons",
                                 headers={
                                     "X-RapidAPI-Key": RAPIDAPI_KEY,
                                     "X-RapidAPI-Host": RAPIDAPI_HOST
@@ -1320,10 +1593,11 @@ RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
     
     # Get available races for 2025
     schedule = fastf1.get_event_schedule(2025)
-    races = schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
     
     # Show content based on selected tab
-    if app_mode == "📊 Dashboard":
+    if app_mode == "⚙️ API Diagnostics":
+        test_api_connectivity()
+    elif app_mode == "📊 Dashboard":
         create_dashboard()
     else:
         # For predictions and historical analysis modes, show selection controls at top
@@ -1334,7 +1608,7 @@ RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
             # Race selection
             selected_race = st.selectbox(
                 "Select Race",
-                races
+                schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
             )
         
         # Predefined list of 2024 F1 drivers
