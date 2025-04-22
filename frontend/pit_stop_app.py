@@ -501,18 +501,20 @@ def get_driver_standings():
     try:
         # Try to get from RapidAPI
         if RAPIDAPI_KEY:
-            standings_data = rapidapi_request("standings/drivers", {"year": 2025})
+            standings_data = rapidapi_request("standings-drivers", {"year": 2025})
             
             if standings_data and "standings" in standings_data:
                 standings = []
                 
-                for driver in standings_data["standings"]:
-                    standings.append({
-                        "Position": driver.get("position", "-"),
-                        "Driver": driver.get("driver", {}).get("code", ""),
-                        "Team": driver.get("team", {}).get("name", ""),
-                        "Points": driver.get("points", 0)
-                    })
+                for entry in standings_data["standings"].get("entries", []):
+                    if "athlete" in entry:
+                        driver = entry.get("athlete", {})
+                        standings.append({
+                            "Position": entry.get("stats", [])[0].get("displayValue", "-") if entry.get("stats") else "-",
+                            "Driver": driver.get("abbreviation", ""),
+                            "Team": driver.get("team", {}).get("displayName", ""),
+                            "Points": entry.get("stats", [])[1].get("displayValue", "0") if len(entry.get("stats", [])) > 1 else "0"
+                        })
                 
                 return pd.DataFrame(standings)
         
@@ -565,17 +567,24 @@ def get_team_standings():
     try:
         # Try to get from RapidAPI
         if RAPIDAPI_KEY:
-            standings_data = rapidapi_request("standings/constructors", {"year": 2025})
+            standings_data = rapidapi_request("standings-controllers", {"year": 2025})
             
             if standings_data and "standings" in standings_data:
                 standings = []
                 
-                for team in standings_data["standings"]:
-                    standings.append({
-                        "Position": team.get("position", "-"),
-                        "Team": team.get("team", {}).get("name", ""),
-                        "Points": team.get("points", 0)
-                    })
+                for entry in standings_data["standings"].get("entries", []):
+                    if "team" in entry and "stats" in entry and len(entry["stats"]) >= 2:
+                        team = entry.get("team", {})
+                        # Get position from stats[0]
+                        position = entry["stats"][0].get("displayValue", "-")
+                        # Get points from stats[1]
+                        points = entry["stats"][1].get("displayValue", "0")
+                        
+                        standings.append({
+                            "Position": position,
+                            "Team": team.get("displayName", ""),
+                            "Points": points
+                        })
                 
                 return pd.DataFrame(standings)
         
@@ -684,9 +693,9 @@ def get_latest_news():
         if api_key:
             # Try different possible news endpoint URLs
             urls_to_try = [
+                f"https://{api_host}/articles",
                 f"https://{api_host}/news",
-                f"https://{api_host}/news/latest",
-                f"https://{api_host}/news/articles"
+                f"https://{api_host}/news-articles"
             ]
             
             for url in urls_to_try:
@@ -708,38 +717,61 @@ def get_latest_news():
                         
                         # Try to determine the data structure
                         logger.info(f"Response structure: {type(news_data)}")
+                        
+                        # Try different response structures
+                        articles_data = None
                         if isinstance(news_data, dict) and "articles" in news_data:
                             logger.info("Found 'articles' key in response")
-                            news_data = news_data["articles"]
+                            articles_data = news_data["articles"]
+                        elif isinstance(news_data, list):
+                            logger.info("Found list of articles in response")
+                            articles_data = news_data
                         
-                        if news_data and isinstance(news_data, list):
-                            logger.info(f"Successfully retrieved {len(news_data)} news items")
+                        if articles_data and isinstance(articles_data, list):
+                            logger.info(f"Successfully retrieved {len(articles_data)} news items")
                             # Create news items from returned data
                             news_items = []
-                            for article in news_data[:6]:  # Get top 6 news items
-                                # Get the first image if available
+                            for article in articles_data[:6]:  # Get top 6 news items
+                                # Look for images using different possible path formats
                                 image_url = None
-                                if "images" in article and len(article["images"]) > 0:
+                                if "images" in article and isinstance(article["images"], list) and article["images"]:
                                     for img in article["images"]:
                                         if "url" in img and img["url"].endswith((".jpg", ".jpeg", ".png")):
                                             image_url = img["url"]
                                             break
-                                elif "image" in article:
+                                elif "image" in article and article["image"]:
                                     image_url = article["image"]
                                 
-                                # Handle different API response formats
-                                title = article.get("headline", article.get("title", ""))
-                                snippet = article.get("description", article.get("snippet", ""))
-                                url = article.get("link", article.get("url", "#"))
+                                # Get title, checking various possible field names
+                                title = None
+                                for field in ["headline", "title", "name", "displayName"]:
+                                    if field in article and article[field]:
+                                        title = article[field]
+                                        break
                                 
-                                # Add news item
-                                news_items.append({
-                                    "title": title,
-                                    "date": "Latest",
-                                    "snippet": snippet,
-                                    "url": url,
-                                    "image_url": image_url
-                                })
+                                # Get description
+                                snippet = None
+                                for field in ["description", "snippet", "summary", "shortDescription"]:
+                                    if field in article and article[field]:
+                                        snippet = article[field]
+                                        break
+                                
+                                # Get URL
+                                url = None
+                                for field in ["link", "url", "href"]:
+                                    if field in article and article[field]:
+                                        url = article[field]
+                                        break
+                                
+                                if title and snippet:
+                                    # Add news item
+                                    news_items.append({
+                                        "title": title,
+                                        "date": "Latest",
+                                        "snippet": snippet,
+                                        "url": url if url else "#",
+                                        "image_url": image_url
+                                    })
                             
                             if news_items:
                                 logger.info(f"Processed {len(news_items)} news items from {url}")
@@ -748,8 +780,8 @@ def get_latest_news():
                             logger.warning(f"News API returned empty or invalid data format from {url}")
                     except Exception as e:
                         logger.error(f"Error processing data from {url}: {str(e)}")
-            
-            logger.warning("All news API URLs failed")
+                
+                logger.warning("All news API URLs failed")
             
             # Get public fallback content
             try:
@@ -839,13 +871,13 @@ def get_full_season_schedule(year=2025):
         # Try to get from RapidAPI
         if RAPIDAPI_KEY:
             # Get current season schedule
-            schedule_data = rapidapi_request("schedule", {"year": year})
+            schedule_data = rapidapi_request("season", {"year": year})
             
-            if schedule_data and "calendar" in schedule_data:
+            if schedule_data and "events" in schedule_data:
                 events = []
                 today = datetime.now().date()
                 
-                for event in schedule_data["calendar"]:
+                for event in schedule_data["events"]:
                     # Parse date
                     date_str = event.get("date", "")
                     try:
@@ -855,11 +887,16 @@ def get_full_season_schedule(year=2025):
                         formatted_date = date_str
                         event_date = datetime.now().date()  # Fallback for status calculation
                     
+                    circuit_name = event.get("circuit", {}).get("name", "")
+                    location = event.get("circuit", {}).get("location", {})
+                    city = location.get("city", "")
+                    country = location.get("country", "")
+                    
                     events.append({
                         "Round": event.get("round", ""),
                         "Name": event.get("name", ""),
-                        "Circuit": event.get("circuit", {}).get("name", ""),
-                        "Location": f"{event.get('circuit', {}).get('location', {}).get('city', '')}, {event.get('circuit', {}).get('location', {}).get('country', '')}",
+                        "Circuit": circuit_name,
+                        "Location": f"{city}, {country}" if city and country else "",
                         "Date": formatted_date,
                         "Status": "Completed" if event_date < today else "Upcoming"
                     })
