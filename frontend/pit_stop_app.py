@@ -1237,7 +1237,7 @@ def create_dashboard():
             with news_cols[idx]:
                 # Add image if available
                 if item.get('image_url'):
-                    st.image(item['image_url'], use_column_width=True)
+                    st.image(item['image_url'], use_container_width=True)
                 
                 st.markdown(f"""
                 <div class="news-card">
