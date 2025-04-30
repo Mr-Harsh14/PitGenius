@@ -11,6 +11,7 @@ from datetime import datetime
 import requests
 import json
 from dotenv import load_dotenv
+import random
 
 # Configure logging first, before anything else
 logging.basicConfig(
@@ -1193,7 +1194,12 @@ def create_dashboard():
             with news_cols[idx]:
                 # Add image if available
                 if item.get('image_url'):
-                    st.image(item['image_url'], use_container_width=True)
+                    try:
+                        st.image(item['image_url'])
+                    except Exception as e:
+                        logger.warning(f"Failed to load news image: {str(e)}")
+                        # Skip image display on error
+                        pass
                 
                 st.markdown(f"""
                 <div class="news-card">
@@ -1223,6 +1229,430 @@ def create_dashboard():
         
         st.markdown('</div>', unsafe_allow_html=True)
 
+def simulate_pit_stop_strategy(race_name, driver_code, weather_conditions, track_conditions, tire_choices):
+    """Simulate a pit stop strategy for a given race and driver."""
+    try:
+        # Get historical data for this race
+        historical_data = get_historical_strategy(race_name, driver_code)
+        
+        # Get current season data
+        current_standings = get_driver_standings()
+        current_team = ""
+        try:
+            # Get the driver's team if available
+            driver_row = current_standings[current_standings['Driver'] == driver_code]
+            if not driver_row.empty:
+                current_team = driver_row['Team'].iloc[0]
+        except Exception as e:
+            logger.warning(f"Could not get team for driver {driver_code}: {e}")
+            current_team = "Unknown Team"
+        
+        # Create a race map to get lap count
+        race_laps = {
+            'Monaco Grand Prix': 78,
+            'Singapore Grand Prix': 62,
+            'Bahrain Grand Prix': 57,
+            'Abu Dhabi Grand Prix': 58,
+            'Australian Grand Prix': 58,
+            'Emilia Romagna Grand Prix': 63,
+            'Miami Grand Prix': 57,
+            'Japanese Grand Prix': 53,
+            'Chinese Grand Prix': 56,
+            'United States Grand Prix': 56,
+            'Spanish Grand Prix': 66,
+            'Austrian Grand Prix': 71,
+            'British Grand Prix': 52,
+            'Hungarian Grand Prix': 70,
+            'Belgian Grand Prix': 44,
+            'Dutch Grand Prix': 72,
+            'Italian Grand Prix': 53,
+            'Azerbaijan Grand Prix': 51,
+            'Qatar Grand Prix': 57,
+            'Brazilian Grand Prix': 71,
+            'Las Vegas Grand Prix': 50,
+            'Mexican Grand Prix': 71,
+            'Canadian Grand Prix': 70,
+            'Saudi Arabian Grand Prix': 50
+        }
+        
+        # Get total laps for this race or use default
+        total_laps = race_laps.get(race_name, 60)
+        
+        # Base simulation on historical data and current conditions
+        simulation_results = {
+            'race_name': race_name,
+            'driver': driver_code,
+            'team': current_team,
+            'weather': weather_conditions,
+            'track': track_conditions,
+            'tire_choices': tire_choices,
+            'total_laps': total_laps,
+            'predicted_stops': [],
+            'stints': []
+        }
+        
+        # Calculate base number of stops based on historical data
+        avg_stops = 1  # Default value if no historical data
+        if not historical_data.empty:
+            avg_stops = historical_data['NumStops'].mean()
+        
+        # Adjust based on weather and track conditions
+        if weather_conditions == 'Rain':
+            avg_stops += 1
+        elif weather_conditions == 'Mixed':
+            avg_stops += 0.5
+            
+        if track_conditions == 'High Degradation':
+            avg_stops += 0.5
+        elif track_conditions == 'Low Degradation':
+            avg_stops -= 0.5
+        
+        # Calculate stops (minimum 1, maximum based on tire choices)
+        stops = min(max(round(avg_stops), 1), len(tire_choices))
+        
+        # Calculate base lap time (seconds)
+        base_lap_time = 90
+        degradation_factor = 0.1  # seconds per lap
+        
+        if track_conditions == 'High Degradation':
+            degradation_factor = 0.2
+        elif track_conditions == 'Low Degradation':
+            degradation_factor = 0.05
+            
+        # Generate stop laps based on tire wear
+        stint_lengths = []
+        
+        # Tire-specific max stint lengths
+        max_stint_lengths = {
+            'SOFT': int(total_laps * 0.3),
+            'MEDIUM': int(total_laps * 0.5),
+            'HARD': int(total_laps * 0.7),
+            'INTERMEDIATE': int(total_laps * 0.4) if weather_conditions in ['Rain', 'Mixed'] else int(total_laps * 0.3),
+            'WET': int(total_laps * 0.5) if weather_conditions == 'Rain' else int(total_laps * 0.25)
+        }
+        
+        remaining_laps = total_laps
+        current_lap = 0
+        
+        # Create stints based on tire choices
+        for i in range(stops):
+            if i >= len(tire_choices):
+                break
+                
+            tire = tire_choices[i]
+            
+            # Calculate max possible stint length based on tire compound
+            max_length = max_stint_lengths.get(tire, int(total_laps * 0.4))
+            
+            # If it's the last stint, use all remaining laps
+            if i == stops - 1:
+                stint_length = remaining_laps
+            else:
+                # Calculate a realistic stint length, between 15 laps and max for that compound
+                min_stint = min(15, remaining_laps // 2)
+                max_stint = min(max_length, remaining_laps - 10)  # Keep at least 10 laps for the last stint
+                
+                # Randomize a bit to make it more realistic
+                import random
+                stint_length = random.randint(min_stint, max_stint)
+            
+            stint_lengths.append(stint_length)
+            remaining_laps -= stint_length
+            
+            # Add pit stop data (except for the last one)
+            if i < stops - 1:
+                stop_lap = current_lap + stint_length
+                
+                simulation_results['predicted_stops'].append({
+                    'lap': stop_lap,
+                    'tire_from': tire,
+                    'tire_to': tire_choices[i+1] if i+1 < len(tire_choices) else 'UNKNOWN',
+                    'estimated_time': base_lap_time + (stop_lap * degradation_factor)
+                })
+            
+            # Add stint data
+            simulation_results['stints'].append({
+                'start_lap': current_lap,
+                'end_lap': current_lap + stint_length,
+                'compound': tire,
+                'avg_lap_time': base_lap_time + (current_lap + stint_length/2) * degradation_factor
+            })
+            
+            current_lap += stint_length
+        
+        return simulation_results
+    except Exception as e:
+        logger.error(f"Error in pit stop simulation: {str(e)}")
+        return None
+
+def create_simulation_interface():
+    """Create the simulation interface."""
+    st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+    st.markdown('<h2 class="card-title">🏎️ Pit Stop Strategy Simulator</h2>', unsafe_allow_html=True)
+    
+    # Get available races
+    schedule = get_full_season_schedule(2025)
+    upcoming_races = schedule[schedule['Status'] == 'Upcoming']['Name'].tolist()
+    
+    # Fallback if no upcoming races found
+    if not upcoming_races:
+        upcoming_races = [
+            "Bahrain Grand Prix", "Saudi Arabian Grand Prix", "Australian Grand Prix",
+            "Japanese Grand Prix", "Chinese Grand Prix", "Miami Grand Prix",
+            "Emilia Romagna Grand Prix", "Monaco Grand Prix", "Canadian Grand Prix",
+            "Spanish Grand Prix", "Austrian Grand Prix", "British Grand Prix",
+            "Hungarian Grand Prix", "Belgian Grand Prix", "Dutch Grand Prix",
+            "Italian Grand Prix", "Azerbaijan Grand Prix", "Singapore Grand Prix",
+            "United States Grand Prix", "Mexican Grand Prix", "Brazilian Grand Prix",
+            "Las Vegas Grand Prix", "Qatar Grand Prix", "Abu Dhabi Grand Prix"
+        ]
+    
+    # Create input columns
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Race selection
+        selected_race = st.selectbox(
+            "Select Race",
+            upcoming_races
+        )
+        
+        # Driver selection
+        driver_standings = get_driver_standings()
+        drivers = driver_standings['Driver'].tolist()
+        selected_driver = st.selectbox(
+            "Select Driver",
+            drivers
+        )
+        
+        # Weather conditions
+        weather_options = ['Dry', 'Rain', 'Mixed']
+        selected_weather = st.selectbox(
+            "Weather Conditions",
+            weather_options
+        )
+    
+    with col2:
+        # Track conditions
+        track_options = ['High Degradation', 'Medium Degradation', 'Low Degradation']
+        selected_track = st.selectbox(
+            "Track Conditions",
+            track_options
+        )
+        
+        # Tire choices
+        st.write("Select Tire Strategy (in order of use):")
+        tire_choices = []
+        for i in range(3):  # Allow up to 3 different tire compounds
+            tire = st.selectbox(
+                f"Tire {i+1}",
+                ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET'],
+                key=f"tire_{i}"
+            )
+            if tire:
+                tire_choices.append(tire)
+    
+    # Run simulation button
+    if st.button("Run Simulation", key="run_simulation", use_container_width=True, type="primary"):
+        with st.spinner("Simulating strategy..."):
+            results = simulate_pit_stop_strategy(
+                selected_race,
+                selected_driver,
+                selected_weather,
+                selected_track,
+                tire_choices
+            )
+            
+            if results:
+                # Display results
+                st.subheader("Simulation Results")
+                
+                # Create columns for results
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### Race Information")
+                    st.write(f"**Race:** {results['race_name']}")
+                    st.write(f"**Driver:** {results['driver']} ({results['team']})")
+                    st.write(f"**Weather:** {results['weather']}")
+                    st.write(f"**Track:** {results['track']}")
+                    st.write(f"**Total Laps:** {results['total_laps']}")
+                
+                with col2:
+                    st.markdown("### Predicted Strategy")
+                    if results['predicted_stops']:
+                        for i, stop in enumerate(results['predicted_stops']):
+                            st.write(f"**Pit Stop {i+1} (Lap {stop['lap']}):** {stop['tire_from']} → {stop['tire_to']}")
+                            st.write(f"Estimated lap time: {stop['estimated_time']:.2f}s")
+                    else:
+                        st.write("**No pit stops predicted - one-stop strategy**")
+                    
+                    # Show stint summary
+                    st.markdown("### Stint Summary")
+                    for i, stint in enumerate(results['stints']):
+                        st.write(f"**Stint {i+1}:** Laps {stint['start_lap']+1}-{stint['end_lap']} on {stint['compound']}")
+                        st.write(f"Length: {stint['end_lap'] - stint['start_lap']} laps")
+                
+                # Add visualization
+                st.markdown("### Strategy Timeline")
+                fig, ax = plt.subplots(figsize=(10, 4))
+                
+                # Plot tire stints
+                tire_colors = {
+                    'SOFT': '#FF1E1E',
+                    'MEDIUM': '#FFF200',
+                    'HARD': '#FFFFFF',
+                    'INTERMEDIATE': '#39B54A',
+                    'WET': '#00A0DC'
+                }
+                
+                # Plot each stint as a horizontal bar
+                for stint in results['stints']:
+                    ax.barh(0.5, stint['end_lap'] - stint['start_lap'], left=stint['start_lap'], 
+                           color=tire_colors.get(stint['compound'], 'gray'),
+                           alpha=0.8, height=0.6)
+                    
+                    # Add compound label in the middle of the stint
+                    mid_lap = stint['start_lap'] + (stint['end_lap'] - stint['start_lap']) / 2
+                    text_color = 'black' if stint['compound'] in ['MEDIUM', 'HARD'] else 'white'
+                    ax.text(mid_lap, 0.5, stint['compound'],
+                           ha='center', va='center', fontweight='bold',
+                           color=text_color)
+                
+                # Add pit stop markers
+                for stop in results['predicted_stops']:
+                    ax.axvline(x=stop['lap'], color='black', linestyle='--', linewidth=2)
+                    ax.plot(stop['lap'], 0.5, 'ko', markersize=10)
+                
+                # Add lap counter on bottom
+                lap_markers = list(range(0, results['total_laps'] + 1, 10))
+                if results['total_laps'] not in lap_markers:
+                    lap_markers.append(results['total_laps'])
+                    
+                ax.set_xticks(lap_markers)
+                ax.set_xlabel('Lap Number', fontsize=12)
+                
+                # Hide y-axis labels since we only have one row
+                ax.set_yticks([])
+                
+                # Set x-axis limits
+                ax.set_xlim(-1, results['total_laps'] + 1)
+                
+                # Add title and grid
+                ax.set_title(f'Pit Stop Strategy - {results["driver"]} at {results["race_name"]}', fontsize=14)
+                ax.grid(True, alpha=0.3)
+                
+                # Add legend for tire compounds
+                legend_elements = [plt.Rectangle((0,0), 1, 1, fc=color, label=compound) 
+                                 for compound, color in tire_colors.items()]
+                ax.legend(handles=legend_elements, loc='upper center', 
+                         bbox_to_anchor=(0.5, -0.15), ncol=5)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Add race simulation visualization
+                st.markdown("### Lap Time Simulation")
+                
+                # Create lap time simulation
+                lap_times = []
+                positions = []
+                current_position = random.randint(5, 15)  # Start position
+                
+                for lap in range(1, results['total_laps'] + 1):
+                    # Find which stint this lap belongs to
+                    current_stint = None
+                    for stint in results['stints']:
+                        if stint['start_lap'] < lap <= stint['end_lap']:
+                            current_stint = stint
+                            break
+                    
+                    if current_stint:
+                        # Calculate lap time with some random variation
+                        base_time = current_stint['avg_lap_time']
+                        variation = random.uniform(-0.5, 0.5)
+                        
+                        # Add pit stop delay
+                        pit_stop_delay = 0
+                        for stop in results['predicted_stops']:
+                            if stop['lap'] == lap:
+                                pit_stop_delay = random.uniform(20, 24)  # Pit stop takes ~22 seconds
+                        
+                        lap_time = base_time + variation + pit_stop_delay
+                        lap_times.append(lap_time)
+                        
+                        # Update position (improve it slightly over the race with some randomness)
+                        position_change = 0
+                        if pit_stop_delay > 0:
+                            # Lose positions in pit
+                            position_change = random.randint(1, 3)
+                        else:
+                            # Randomly gain or lose positions
+                            position_change = random.choice([-1, -1, 0, 0, 0, 1])
+                        
+                        current_position = max(1, min(20, current_position + position_change))
+                        positions.append(current_position)
+                
+                # Create a figure with two subplots
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), gridspec_kw={'height_ratios': [2, 1]})
+                
+                # Plot lap times
+                ax1.plot(range(1, results['total_laps'] + 1), lap_times, 'b-', alpha=0.7)
+                
+                # Add points for pit stops
+                for stop in results['predicted_stops']:
+                    stop_index = stop['lap'] - 1
+                    if 0 <= stop_index < len(lap_times):
+                        ax1.plot(stop['lap'], lap_times[stop_index], 'ro', markersize=8)
+                        ax1.text(stop['lap'], lap_times[stop_index] + 1, f"Pit\n{stop['tire_from']} → {stop['tire_to']}", 
+                                ha='center', va='bottom', fontsize=8)
+                
+                # Customize lap time plot
+                ax1.set_xlabel('Lap')
+                ax1.set_ylabel('Lap Time (seconds)')
+                ax1.set_title('Simulated Lap Times')
+                ax1.grid(True, alpha=0.3)
+                
+                # Add stint background colors
+                for stint in results['stints']:
+                    ax1.axvspan(stint['start_lap'], stint['end_lap'], 
+                               alpha=0.1, 
+                               color=tire_colors.get(stint['compound'], 'gray'))
+                
+                # Plot position
+                ax2.plot(range(1, results['total_laps'] + 1), positions, 'g-', alpha=0.7)
+                ax2.set_ylim(20.5, 0.5)  # Reverse y-axis to show position 1 at the top
+                ax2.set_xlabel('Lap')
+                ax2.set_ylabel('Position')
+                ax2.set_title('Simulated Race Position')
+                ax2.grid(True, alpha=0.3)
+                
+                # Mark pit stops on position chart
+                for stop in results['predicted_stops']:
+                    stop_index = stop['lap'] - 1
+                    if 0 <= stop_index < len(positions):
+                        ax2.plot(stop['lap'], positions[stop_index], 'ro', markersize=8)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Add race summary
+                final_position = positions[-1] if positions else current_position
+                st.markdown("### Race Summary")
+                st.write(f"**Predicted Finish Position:** P{final_position}")
+                st.write(f"**Total Pit Stops:** {len(results['predicted_stops'])}")
+                
+                # Calculate total race time
+                total_time = sum(lap_times)
+                hours = int(total_time // 3600)
+                minutes = int((total_time % 3600) // 60)
+                seconds = total_time % 60
+                st.write(f"**Estimated Race Time:** {hours}h {minutes}m {seconds:.3f}s")
+            else:
+                st.error("Failed to generate simulation. Please try again.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
 def main():
     st.set_page_config(page_title="PitGenius - F1 Pit Stop Predictions", layout="wide")
     
@@ -1236,10 +1666,10 @@ def main():
     # Sidebar navigation
     st.sidebar.title("Navigation")
     app_mode = st.sidebar.radio(
-        "Navigation Options",  # Added label for accessibility
-        ["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis"],
-        index=["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis"].index(st.session_state.app_mode),
-        label_visibility="collapsed"  # Hide the label but keep it for accessibility
+        "Navigation Options",
+        ["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis", "🎮 Strategy Simulator"],
+        index=["📊 Dashboard", "🔮 Predictions", "📈 Historical Analysis", "🎮 Strategy Simulator"].index(st.session_state.app_mode),
+        label_visibility="collapsed"
     )
     
     # Update session state
@@ -1318,16 +1748,17 @@ RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
             5. Add it to your .env file
             """)
     
-    # Get available races for 2025
-    schedule = fastf1.get_event_schedule(2025)
-    races = schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
-    
-    # Show content based on selected tab
+    # Show appropriate content based on the selected mode
     if app_mode == "📊 Dashboard":
         create_dashboard()
+    elif app_mode == "🎮 Strategy Simulator":
+        create_simulation_interface()
     else:
+        # Get available races for predictions and historical analysis
+        schedule = fastf1.get_event_schedule(2025)
+        races = schedule[schedule['EventFormat'] == 'conventional']['EventName'].tolist()
+        
         # For predictions and historical analysis modes, show selection controls at top
-        # Create 3 columns for selections
         col1, col2, col3 = st.columns(3)
         
         with col1:
