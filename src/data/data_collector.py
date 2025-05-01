@@ -233,7 +233,7 @@ def main():
     """Main function to run the data collection process."""
     # Load configuration
     cache_dir = os.getenv('FASTF1_CACHE_DIR', 'data/raw/fastf1_cache')
-    seasons = [2022, 2023]  # 2024 not included as season hasn't started yet
+    seasons = [2020, 2021, 2022, 2023]  # 2024 not included as season hasn't started yet
     
     # Initialize collector
     collector = F1DataCollector(cache_dir, seasons)
