@@ -58,7 +58,7 @@ def plot_driver_pit_stops(race, predictions: pd.DataFrame, driver_number: str):
         driver_number: Driver's number to visualize
     """
     # Get driver's laps
-    driver_laps = race.laps.pick_driver(driver_number)
+    driver_laps = race.laps.pick_drivers(driver_number)
     driver_info = race.get_driver(driver_number)
     
     # Get actual pit stops
@@ -211,7 +211,7 @@ def plot_race_overview(race, predictions: pd.DataFrame):
     # Plot each driver's pit stops
     for i, driver in enumerate(drivers):
         driver_info = race.get_driver(driver)
-        driver_laps = race.laps.pick_driver(driver)
+        driver_laps = race.laps.pick_drivers(driver)
         
         # Add starting compound (actual)
         starting_compound = driver_laps.iloc[0]['Compound']
