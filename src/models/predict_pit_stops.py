@@ -275,7 +275,7 @@ def main():
         races = schedule[schedule['EventFormat'] == 'conventional']
         
         # Load trained model
-        model = load_model([2022, 2023])
+        model = load_model([2020, 2021, 2022, 2023])
         logger.info("Loaded trained model")
         
         # Process each race
