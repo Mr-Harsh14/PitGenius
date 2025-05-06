@@ -147,31 +147,42 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
     # Set style to default (light) theme
     plt.style.use('default')
     
-    # Create figure with two subplots - even smaller size
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 3), height_ratios=[2, 1], gridspec_kw={'hspace': 0.05})
+    # Create figure with two subplots - larger size for better visibility
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), height_ratios=[2, 1], gridspec_kw={'hspace': 0.15})
     
-    # Plot pit stop probability on top subplot
+    # Plot pit stop probability on top subplot with better styling
     ax1.plot(driver_predictions['LapNumber'], driver_predictions['PitProbability'], 
-             label='Pit Stop Probability', color='#0066FF', alpha=0.8, linewidth=2)
+             label='Pit Stop Probability', color='#0066FF', alpha=0.9, linewidth=2.5)
     
-    # Plot prediction threshold
-    ax1.axhline(y=0.5, color='gray', linestyle='--', alpha=0.5, 
+    # Plot prediction threshold with clearer style
+    ax1.axhline(y=0.5, color='#888888', linestyle='--', alpha=0.7, 
                 label='Prediction Threshold')
     
-    # Plot predicted pit stops
+    # Plot predicted pit stops with more visible lines
     predicted_stops = driver_predictions[driver_predictions['PredictedPitStop']]['LapNumber']
     for pred_lap in predicted_stops:
-        ax1.axvline(x=pred_lap, color='#00CC00', linestyle='--', alpha=0.5, linewidth=2)
+        ax1.axvline(x=pred_lap, color='#00CC00', linestyle='-', alpha=0.7, linewidth=1.5)
+        # Add a highlight marker at the peak for better visibility
+        prob_at_stop = driver_predictions[driver_predictions['LapNumber'] == pred_lap]['PitProbability'].values[0]
+        ax1.plot(pred_lap, prob_at_stop, 'o', color='#00CC00', markersize=8, alpha=0.8)
     
-    # Add legend to top subplot with smaller font and better positioning
-    ax1.legend(loc='upper right', framealpha=0.9, fontsize=8, bbox_to_anchor=(1.0, 0.95))
+    # Move legend outside the plot to avoid overlap
+    ax1.legend(loc='upper left', framealpha=0.9, fontsize=10, 
+              bbox_to_anchor=(0, -0.05), ncol=2)
     
-    # Customize top subplot
-    ax1.set_title(f'Pit Stop Predictions - {driver_code}', pad=20)
-    ax1.set_ylabel('Pit Stop Probability')
-    ax1.grid(True, alpha=0.2)
+    # Customize top subplot with clearer styling
+    ax1.set_title(f'Pit Stop Predictions - {driver_code}', fontsize=14, fontweight='bold')
+    ax1.set_ylabel('Pit Stop Probability', fontsize=12)
+    ax1.grid(True, alpha=0.3)
     ax1.set_xlim(0, max(driver_predictions['LapNumber']) + 1)
     ax1.set_ylim(-0.05, 1.05)
+    
+    # Add more visible x-axis gridlines
+    ax1.set_xticks(range(0, int(max(driver_predictions['LapNumber'])) + 5, 5))
+    
+    # Set y-axis ticks
+    ax1.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax1.set_yticklabels(['0%', '25%', '50%', '75%', '100%'])
     
     # Plot predicted compounds on bottom subplot
     compounds = {
@@ -182,10 +193,10 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
         'WET': '#00A0DC'        # Blue for wet
     }
     
-    # Set subplot background color
+    # Set subplot background color - darker for better contrast
     ax2.set_facecolor('#1E1E1E')
     
-    # Plot predicted compounds
+    # Plot predicted compounds with better styling
     current_compound = None
     start_lap = 0
     
@@ -198,12 +209,12 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
                 ax2.axvspan(start_lap, end_lap, 
                            ymin=0.0, ymax=1.0,
                            color=compounds.get(current_compound, 'gray'), alpha=0.8)
-                # Add compound label
+                # Add larger, clearer compound label
                 mid_lap = (start_lap + end_lap) / 2
                 text_color = 'black' if current_compound in ['MEDIUM', 'HARD'] else 'white'
                 ax2.text(mid_lap, 0.5, current_compound[0] if current_compound else '?', 
                         horizontalalignment='center', verticalalignment='center',
-                        color=text_color, fontweight='bold')
+                        color=text_color, fontweight='bold', fontsize=14)
             current_compound = lap['CurrentCompound']
             start_lap = lap['LapNumber']
     
@@ -216,35 +227,49 @@ def plot_driver_prediction(predictions: pd.DataFrame, driver_code: str):
         text_color = 'black' if current_compound in ['MEDIUM', 'HARD'] else 'white'
         ax2.text(mid_lap, 0.5, current_compound[0] if current_compound else '?', 
                 horizontalalignment='center', verticalalignment='center',
-                color=text_color, fontweight='bold')
+                color=text_color, fontweight='bold', fontsize=14)
     
-    # Plot predicted pit stops on compound subplot
+    # Plot predicted pit stops on compound subplot with clearer lines
     for pit_lap in predicted_stops:
-        ax2.axvline(x=pit_lap, color='white', linestyle='--', alpha=0.8, linewidth=2)
+        ax2.axvline(x=pit_lap, color='white', linestyle='-', alpha=0.9, linewidth=1.5)
     
-    # Customize compound subplot
-    ax2.set_xlabel('Lap Number')
-    ax2.set_ylabel('Compound')
+    # Customize compound subplot with better styling
+    ax2.set_xlabel('Lap Number', fontsize=12)
+    ax2.set_ylabel('Compound', fontsize=12)
     ax2.set_yticks([])
     ax2.set_xlim(0, max(driver_predictions['LapNumber']) + 1)
     
-    # Add compound legend with better formatting
+    # Use same x-axis ticks as top plot for consistency
+    ax2.set_xticks(range(0, int(max(driver_predictions['LapNumber'])) + 5, 5))
+    
+    # Move compound legend outside the plot for clarity
     legend_elements = [plt.Rectangle((0, 0), 1, 1, fc=color, alpha=0.8, label=compound)
                       for compound, color in compounds.items()]
-    ax2.legend(handles=legend_elements, loc='upper right', ncol=3,
-              fontsize=7, bbox_to_anchor=(1.0, 1.4),
-              facecolor='#1E1E1E', edgecolor='gray')
+    ax2.legend(handles=legend_elements, loc='lower right', ncol=5,
+              fontsize=9, bbox_to_anchor=(1.0, -0.3),
+              facecolor='white', edgecolor='gray')
     
     # Set figure background to white
     fig.patch.set_facecolor('white')
     ax1.set_facecolor('white')
     
-    # Adjust layout with minimal margins
-    plt.tight_layout(pad=1.0)
+    # Add a box around the plots for better definition
+    for ax in [ax1, ax2]:
+        ax.spines['top'].set_visible(True)
+        ax.spines['right'].set_visible(True)
+        ax.spines['bottom'].set_visible(True)
+        ax.spines['left'].set_visible(True)
+        ax.spines['top'].set_color('#cccccc')
+        ax.spines['right'].set_color('#cccccc')
+        ax.spines['bottom'].set_color('#cccccc')
+        ax.spines['left'].set_color('#cccccc')
+    
+    # Adjust layout with better spacing
+    plt.tight_layout(pad=2.0)
     
     return fig
 
-def get_historical_strategy(race_name: str, team: str, years: list = [2022, 2023]):
+def get_historical_strategy(race_name: str, team: str, years: list = [2022, 2023, 2024]):
     """Get historical pit stop strategies for a team at a specific race."""
     strategies = []
     
@@ -283,7 +308,8 @@ def get_historical_strategy(race_name: str, team: str, years: list = [2022, 2023
                 if not driver_laps.empty:
                     # Get pit stops by looking at pit_in_time
                     pit_stops = driver_laps[~driver_laps['PitInTime'].isna()]
-                    pit_laps = pit_stops['LapNumber'].tolist()
+                    # Ensure lap numbers are integers for pit stops
+                    pit_laps = [int(lap) for lap in pit_stops['LapNumber'].tolist()]
                     
                     # Get tire compounds for each stint
                     stints = []
@@ -292,23 +318,24 @@ def get_historical_strategy(race_name: str, team: str, years: list = [2022, 2023
                     stint_start_lap = 1
                     
                     for _, lap in driver_laps.sort_values('LapNumber').iterrows():
+                        lap_number = int(lap['LapNumber'])  # Convert to integer
                         if lap['Compound'] != current_compound:
                             if current_compound is not None:
                                 compounds.append(current_compound)
                                 stints.append({
-                                    'start_lap': stint_start_lap,
-                                    'end_lap': lap['LapNumber'] - 1,
+                                    'start_lap': int(stint_start_lap),  # Ensure integer
+                                    'end_lap': lap_number - 1,  # Already an integer
                                     'compound': current_compound
                                 })
                             current_compound = lap['Compound']
-                            stint_start_lap = lap['LapNumber']
+                            stint_start_lap = lap_number  # Store as integer
                     
                     # Add the last stint
                     if current_compound is not None:
                         compounds.append(current_compound)
                         stints.append({
-                            'start_lap': stint_start_lap,
-                            'end_lap': driver_laps['LapNumber'].max(),
+                            'start_lap': int(stint_start_lap),  # Ensure integer
+                            'end_lap': int(driver_laps['LapNumber'].max()),  # Ensure integer
                             'compound': current_compound
                         })
                     
@@ -317,7 +344,7 @@ def get_historical_strategy(race_name: str, team: str, years: list = [2022, 2023
                     if not driver_results.empty:
                         driver_result = driver_results.iloc[0]
                         driver_code = driver_result.get('Abbreviation', str(driver_number))
-                        result = driver_result['Position']
+                        result = int(driver_result['Position'])  # Ensure integer
                         fastest_lap = driver_laps['LapTime'].min()
                         
                         strategies.append({
@@ -334,7 +361,7 @@ def get_historical_strategy(race_name: str, team: str, years: list = [2022, 2023
                         })
                     
         except Exception as e:
-            logger.warning(f"Could not load data for {year} {race_name}: {str(e)}")
+            logger.error(f"Error loading historical data: {str(e)}")
             continue
     
     return pd.DataFrame(strategies)
@@ -348,22 +375,34 @@ def plot_historical_strategies(strategies_df: pd.DataFrame, race_name: str, team
     # Set style to light theme
     plt.style.use('default')
     
-    # Even smaller figure size
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, max(3, len(strategies_df))), 
-                                  gridspec_kw={'height_ratios': [3, 1]}, layout='constrained')
+    # Larger figure size for better visibility and prevent overlapping
+    # Increase height based on number of strategies and ensure minimum sizes
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, max(8, len(strategies_df) * 1.2)), 
+                                  gridspec_kw={'height_ratios': [3, 1], 'hspace': 0.5})
     
     compounds_colors = {
-        'SOFT': '#FF1E1E',     # Bright red for soft
+        'SOFT': '#FF1E1E',      # Bright red for soft
         'MEDIUM': '#FFF200',    # Bright yellow for medium
-        'HARD': '#808080',      # Gray for hard (better contrast on white)
+        'HARD': '#FFFFFF',      # White for hard
         'INTERMEDIATE': '#39B54A',  # Green for intermediate
         'WET': '#00A0DC'        # Blue for wet
     }
     
-    # Set white background
+    # Set white background with light grid
     fig.patch.set_facecolor('white')
-    ax1.set_facecolor('white')
-    ax2.set_facecolor('white')
+    ax1.set_facecolor('#f8f8f8')
+    ax2.set_facecolor('#f8f8f8')
+    
+    # Add border
+    for ax in [ax1, ax2]:
+        ax.spines['top'].set_visible(True)
+        ax.spines['right'].set_visible(True)
+        ax.spines['bottom'].set_visible(True)
+        ax.spines['left'].set_visible(True)
+        ax.spines['top'].set_color('#dddddd')
+        ax.spines['right'].set_color('#dddddd')
+        ax.spines['bottom'].set_color('#dddddd')
+        ax.spines['left'].set_color('#dddddd')
     
     y_positions = []
     y_labels = []
@@ -374,128 +413,114 @@ def plot_historical_strategies(strategies_df: pd.DataFrame, race_name: str, team
         y_positions.append(y_pos)
         
         # Add driver name and result with color coding
-        result_color = '#00FF00' if strategy['Result'] <= 3 else '#FFFFFF'
-        y_labels.append(f"{strategy['Year']} - {strategy['Driver']} (P{strategy['Result']})")
+        position = int(strategy['Result'])  # Ensure integer
+        position_color = '#ff4b4b' if position <= 3 else '#666666'
+        y_labels.append(f"{strategy['Year']} - {strategy['Driver']} (P{position})")
         
-        # Plot compounds
+        # Plot compounds with better styling
         for stint in strategy['Stints']:
-            start = stint['start_lap']
-            end = stint['end_lap']
+            start = int(stint['start_lap'])  # Ensure integer
+            end = int(stint['end_lap'])  # Ensure integer
             compound = stint['compound']
             
-            # Plot stint bar
-            ax1.barh(y_pos, end - start + 1, left=start, height=0.8,
-                    color=compounds_colors.get(compound, 'gray'), alpha=0.8)
+            # Plot stint bar with rounded corners
+            ax1.barh(y_pos, end - start + 1, left=start, height=1.0,
+                    color=compounds_colors.get(compound, 'gray'), alpha=0.9,
+                    edgecolor='#333333', linewidth=0.5)
             
             # Add compound label with contrasting text color
             mid_point = start + (end - start) / 2
             text_color = 'black' if compound in ['MEDIUM', 'HARD'] else 'white'
-            ax1.text(mid_point, y_pos, compound[0] if compound else '?',
-                    ha='center', va='center', color=text_color, 
-                    fontweight='bold', fontsize=10)
+            
+            # Only add text if the stint is wide enough for text
+            if end - start > 3:
+                ax1.text(mid_point, y_pos, compound[0] if compound else '?',
+                        ha='center', va='center', color=text_color, 
+                        fontweight='bold', fontsize=12)
         
         # Plot pit stops with enhanced visibility
         for pit_lap in strategy['PitLaps']:
+            pit_lap = int(pit_lap)  # Ensure integer
             # Add vertical line for pit stop
-            ax1.axvline(x=pit_lap, ymin=(y_pos-0.4)/len(strategies_df)/2,
-                       ymax=(y_pos+0.4)/len(strategies_df)/2,
-                       color='black', linestyle='--', alpha=0.8, linewidth=2)
+            ax1.axvline(x=pit_lap, ymin=(y_pos-0.6)/len(strategies_df)/6,
+                       ymax=(y_pos+0.6)/len(strategies_df)/6,
+                       color='black', linestyle='-', alpha=0.9, linewidth=1.5)
             
-            # Add small marker at pit stop point
-            ax1.plot([pit_lap], [y_pos], 'wo', markersize=6, alpha=0.8)
+            # Add more visible marker at pit stop point
+            ax1.plot([pit_lap], [y_pos], 'wo', markersize=8, alpha=1.0, 
+                    markeredgecolor='black', markeredgewidth=1)
     
-    # Customize strategy timeline with dark text
+    # Customize strategy timeline with better styling
     ax1.set_yticks(y_positions)
-    ax1.set_yticklabels(y_labels, color='black')
-    ax1.set_xlabel('Lap Number', color='black', fontsize=10)
+    ax1.set_yticklabels(y_labels, fontsize=11, fontweight='medium')
+    ax1.set_xlabel('Lap Number', fontsize=12, fontweight='bold')
     ax1.set_title(f'Historical Pit Stop Strategies - {team} at {race_name}',
-                  color='black', fontsize=12, pad=20)
-    ax1.grid(True, alpha=0.2, color='gray')
+                  fontsize=14, fontweight='bold', pad=15)
+    ax1.grid(True, alpha=0.3, color='gray', linestyle=':')
     
-    # Add compound legend with enhanced visibility and better positioning
-    legend_elements = [plt.Rectangle((0,0),1,1, facecolor=color, alpha=0.8, label=compound)
+    # Add x-axis gridlines at 10-lap intervals
+    max_lap = max([int(stint['end_lap']) for strategy in strategies_df.itertuples() 
+                  for stint in strategy.Stints]) if not strategies_df.empty else 60
+    ax1.set_xticks(range(0, max_lap + 10, 10))
+    
+    # Move legend outside the plot for better visibility
+    legend_elements = [plt.Rectangle((0,0),1,1, facecolor=color, alpha=0.8, label=compound, 
+                                    edgecolor='black', linewidth=0.5)
                       for compound, color in compounds_colors.items()]
-    ax1.legend(handles=legend_elements, loc='upper right', ncol=3,
-              fontsize=7, bbox_to_anchor=(1.0, 1.1),
+    ax1.legend(handles=legend_elements, loc='upper center', ncol=5,
+              fontsize=10, bbox_to_anchor=(0.5, -0.15),
               facecolor='white', edgecolor='gray')
     
-    # Plot lap time comparison
+    # Plot lap time comparison with better styling
     bar_width = 0.8
     for i, (_, strategy) in enumerate(strategies_df.iterrows()):
         if 'FastestLap' in strategy and pd.notnull(strategy['FastestLap']):
             lap_time_seconds = strategy['FastestLap'].total_seconds()
-            # Plot bar with gradient alpha
+            
+            # Get the compound color for the fastest lap (usually the last compound)
+            bar_color = compounds_colors.get(strategy['Compounds'][-1] 
+                                           if strategy['Compounds'] else 'MEDIUM', 'gray')
+            
+            # Plot bar with better styling
             ax2.bar(i, lap_time_seconds, width=bar_width,
-                   color=compounds_colors.get(strategy['Compounds'][-1], 'gray'),
-                   alpha=0.8)
-            # Add time label
-            ax2.text(i, lap_time_seconds + 0.2, f"{lap_time_seconds:.1f}s",
-                    ha='center', va='bottom', color='black', fontsize=9)
+                   color=bar_color, alpha=0.85, 
+                   edgecolor='black', linewidth=0.5)
+            
+            # Add time label with better font
+            ax2.text(i, lap_time_seconds + 0.3, f"{lap_time_seconds:.1f}s",
+                    ha='center', va='bottom', color='black', 
+                    fontsize=10, fontweight='bold')
     
-    # Customize lap time comparison with dark text
+    # Customize lap time comparison with better styling
     ax2.set_xticks(range(len(strategies_df)))
     ax2.set_xticklabels([f"{s['Year']} - {s['Driver']}" for _, s in strategies_df.iterrows()],
-                        rotation=45, ha='right', color='black')
-    ax2.set_ylabel('Fastest Lap Time (s)', color='black', fontsize=10)
-    ax2.set_title('Fastest Lap Comparison', color='black', fontsize=12, pad=20)
-    ax2.grid(True, alpha=0.2, color='gray')
+                        rotation=45, ha='right', fontsize=10)
+    ax2.set_ylabel('Fastest Lap Time (s)', fontsize=12, fontweight='bold')
+    ax2.set_title('Fastest Lap Comparison', fontsize=14, fontweight='bold', pad=15)
+    ax2.grid(True, alpha=0.3, color='gray', linestyle=':')
     
-    # Set x-axis limits for strategy timeline
-    ax1.set_xlim(0, 57)  # Bahrain GP is 57 laps
+    # Set y-axis limits with some padding
+    if len(strategies_df) > 0:
+        fastest_times = [s['FastestLap'].total_seconds() for _, s in strategies_df.iterrows() 
+                        if 'FastestLap' in s and pd.notnull(s['FastestLap'])]
+        if fastest_times:
+            min_time = min(fastest_times)
+            max_time = max(fastest_times)
+            padding = (max_time - min_time) * 0.1 if max_time > min_time else 1.0
+            ax2.set_ylim(min_time - padding, max_time + padding * 3)  # More padding on top for labels
     
-    # Adjust layout
-    plt.tight_layout()
+    # Set x-axis limits for strategy timeline with some padding
+    if len(strategies_df) > 0:
+        max_lap = max([int(stint['end_lap']) for strategy in strategies_df.itertuples() 
+                      for stint in strategy.Stints])
+        ax1.set_xlim(0, max_lap + 5)  # Add some padding
+    else:
+        ax1.set_xlim(0, 60)  # Default if no data
+    
+    # Adjust layout for better spacing
+    plt.tight_layout(pad=3.0)
     
     return fig
-
-def get_upcoming_event():
-    """Get the next upcoming F1 event using RapidAPI."""
-    try:
-        # Try to get from RapidAPI
-        if RAPIDAPI_KEY:
-            # Get current season schedule
-            schedule_data = rapidapi_request("season/schedule", {"year": 2025})
-            
-            if schedule_data and "events" in schedule_data:
-                events = schedule_data["events"]
-                
-                # Find next race that hasn't happened yet
-                today = datetime.now().date()
-                
-                for event in events:
-                    event_date = datetime.strptime(event.get("date", ""), "%Y-%m-%d").date()
-                    if event_date > today and event.get("type") == "Race":
-                        circuit_name = event.get("circuit", {}).get("name", "TBA")
-                        return {
-                            "EventName": event.get("name", ""),
-                            "EventDate": event_date,
-                            "CircuitName": circuit_name,
-                            "Location": f"{event.get('circuit', {}).get('location', {}).get('city', '')}, {event.get('circuit', {}).get('location', {}).get('country', '')}",
-                            "RoundNumber": event.get("round", "")
-                        }
-        
-        # Fall back to FastF1 if RapidAPI fails or is not configured
-        today = datetime.now().date()
-        schedule = fastf1.get_event_schedule(2025)
-        
-        # Convert EventDate to date object for comparison
-        upcoming_events = schedule[schedule['EventDate'].dt.date > today].sort_values('EventDate')
-        
-        if not upcoming_events.empty:
-            # Create a dictionary with field validation for the event
-            event_data = upcoming_events.iloc[0]
-            return {
-                "EventName": event_data.get("EventName", ""),
-                "EventDate": event_data.get("EventDate", ""),
-                "CircuitName": event_data.get("CircuitName", "TBA"),
-                "Location": event_data.get("Location", ""),
-                "RoundNumber": event_data.get("RoundNumber", "")
-            }
-        else:
-            return None
-    except Exception as e:
-        logger.error(f"Error getting upcoming event: {str(e)}")
-        return None
 
 def get_driver_standings():
     """Get current driver standings using RapidAPI."""
@@ -512,9 +537,39 @@ def get_driver_standings():
                     first_entry = standings_data["standings"]["entries"][0]
                     logger.info(f"First entry structure: {json.dumps(first_entry, indent=2)[:500]}...")
                 
+                # Create a mapping of known 2025 driver codes to teams
+                driver_team_mapping = {
+                    "PIA": "McLaren",
+                    "NOR": "McLaren",
+                    "VER": "Red Bull",
+                    "RUS": "Mercedes",
+                    "LEC": "Ferrari",
+                    "HAM": "Ferrari",  # Lewis Hamilton moves to Ferrari [1, 2, 5, 6, 8, 9, 10]
+                    "SAI": "Williams",  # Carlos Sainz moves to Williams [1, 5, 6, 10]
+                    "PER": "Red Bull", # Sergio Pérez was dropped from Red Bull [1, 2, 5, 7] - Note: Some sources list Lawson or Tsunoda at Red Bull, but recent results confirm Tsunoda at Red Bull and Lawson at Racing Bulls [1, 2, 3, 6, 7, 9]
+                    "ALB": "Williams",
+                    "STR": "Aston Martin",
+                    "TSU": "Red Bull",  # Yuki Tsunoda confirmed at Red Bull [1, 2, 3, 6, 9] - Note: Some sources initially listed Lawson at Red Bull, but this was updated [1, 2]
+                    "HUL": "Kick Sauber",  # Nico Hulkenberg moves to Sauber (Kick Sauber) [1, 5, 6, 8, 9, 10]
+                    "ALO": "Aston Martin",
+                    "OCO": "Haas",  # Esteban Ocon moves to Haas [1, 3, 5, 6, 8, 9, 10]
+                    "GAS": "Alpine",
+                    "ZHO": "Reserve",  # Zhou Guanyu is listed as a reserve driver [1]
+                    "RIC": "Racing Bulls", # Daniel Ricciardo is not listed in the confirmed 2025 lineups [2]
+                    "BOT": "Reserve",  # Valtteri Bottas is listed as a reserve driver [1]
+                    "LAW": "Racing Bulls",  # Liam Lawson is confirmed at Racing Bulls [2, 3, 6, 7, 9]
+                    "ANT": "Mercedes",  # Kimi Antonelli joins Mercedes [1, 2, 3, 5, 6, 7, 8, 9, 10]
+                    "BEA": "Haas",  # Oliver Bearman joins Haas [2, 3, 5, 6, 8, 9, 10]
+                    "DOO": "Alpine",  # Jack Doohan joins Alpine [2, 3, 5, 6, 8, 9]
+                    "BOR": "Kick Sauber",  # Gabriel Bortoleto joins Sauber (Kick Sauber) [2, 3, 5, 6, 8, 9]
+                    "HAD": "Racing Bulls"  # Isack Hadjar joins Racing Bulls [2, 3, 5, 6, 7, 9]
+                }
+
+                
                 for entry in standings_data["standings"].get("entries", []):
                     if "athlete" in entry:
                         driver = entry.get("athlete", {})
+                        driver_code = driver.get("abbreviation", "")
                         
                         # Get team information - check all possible locations
                         team_name = ""
@@ -553,17 +608,25 @@ def get_driver_standings():
                                 team_name = "Alpine"
                             elif "Sauber" in entry_str:
                                 team_name = "Sauber"
+                            elif "Racing Bulls" in entry_str:
+                                team_name = "Racing Bulls"
                         
-                        logger.info(f"Driver: {driver.get('abbreviation', '')}, Team found: {team_name}")
+                        # If team is still not found, use our mapping
+                        if not team_name and driver_code in driver_team_mapping:
+                            team_name = driver_team_mapping[driver_code]
+                        
+                        logger.info(f"Driver: {driver_code}, Team found: {team_name}")
                         
                         standings.append({
                             "Position": entry.get("stats", [])[0].get("displayValue", "-") if entry.get("stats") else "-",
-                            "Driver": driver.get("abbreviation", ""),
+                            "Driver": driver_code,
                             "Team": team_name,
                             "Points": entry.get("stats", [])[1].get("displayValue", "0") if len(entry.get("stats", [])) > 1 else "0"
                         })
                 
-                return pd.DataFrame(standings)
+                # Sort by position
+                sorted_standings = sorted(standings, key=lambda x: int(x["Position"]) if x["Position"].isdigit() else 999)
+                return pd.DataFrame(sorted_standings)
         
         # Fall back to FastF1 or placeholder data
         # Get 2025 schedule
@@ -594,19 +657,23 @@ def get_driver_standings():
             
             return pd.DataFrame(standings)
         
-        # Placeholder data if all methods fail
+        # Placeholder data with 2025 drivers and teams
         return pd.DataFrame([
-            {'Position': 1, 'Driver': 'VER', 'Team': 'Red Bull Racing', 'Points': 0},
-            {'Position': 2, 'Driver': 'PER', 'Team': 'Red Bull Racing', 'Points': 0},
-            {'Position': 3, 'Driver': 'HAM', 'Team': 'Mercedes', 'Points': 0}
+            {'Position': 1, 'Driver': 'PIA', 'Team': 'McLaren', 'Points': 131},
+            {'Position': 2, 'Driver': 'NOR', 'Team': 'McLaren', 'Points': 115},
+            {'Position': 3, 'Driver': 'VER', 'Team': 'Red Bull', 'Points': 99},
+            {'Position': 4, 'Driver': 'RUS', 'Team': 'Mercedes', 'Points': 93},
+            {'Position': 5, 'Driver': 'LEC', 'Team': 'Ferrari', 'Points': 53}
         ])
     except Exception as e:
         logger.error(f"Error getting driver standings: {str(e)}")
-        # Return placeholder data
+        # Return placeholder data with 2025 drivers and teams
         return pd.DataFrame([
-            {'Position': 1, 'Driver': 'VER', 'Team': 'Red Bull Racing', 'Points': 0},
-            {'Position': 2, 'Driver': 'PER', 'Team': 'Red Bull Racing', 'Points': 0},
-            {'Position': 3, 'Driver': 'HAM', 'Team': 'Mercedes', 'Points': 0}
+            {'Position': 1, 'Driver': 'PIA', 'Team': 'McLaren', 'Points': 131},
+            {'Position': 2, 'Driver': 'NOR', 'Team': 'McLaren', 'Points': 115},
+            {'Position': 3, 'Driver': 'VER', 'Team': 'Red Bull', 'Points': 99},
+            {'Position': 4, 'Driver': 'RUS', 'Team': 'Mercedes', 'Points': 93},
+            {'Position': 5, 'Driver': 'LEC', 'Team': 'Ferrari', 'Points': 53}
         ])
 
 def get_team_standings():
@@ -918,37 +985,101 @@ def get_full_season_schedule(year=2025):
         # Try to get from RapidAPI
         if RAPIDAPI_KEY:
             # Get current season schedule
-            schedule_data = rapidapi_request("season", {"year": year})
+            schedule_data = rapidapi_request("schedule", {"year": year})
             
-            if schedule_data and "events" in schedule_data:
+            if schedule_data:
                 events = []
                 today = datetime.now().date()
                 
-                for event in schedule_data["events"]:
-                    # Parse date
-                    date_str = event.get("date", "")
-                    try:
-                        event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                        formatted_date = event_date.strftime("%d %b %Y")
-                    except ValueError:
-                        formatted_date = date_str
-                        event_date = datetime.now().date()  # Fallback for status calculation
-                    
-                    circuit_name = event.get("circuit", {}).get("name", "")
-                    location = event.get("circuit", {}).get("location", {})
-                    city = location.get("city", "")
-                    country = location.get("country", "")
-                    
-                    events.append({
-                        "Round": event.get("round", ""),
-                        "Name": event.get("name", ""),
-                        "Circuit": circuit_name,
-                        "Location": f"{city}, {country}" if city and country else "",
-                        "Date": formatted_date,
-                        "Status": "Completed" if event_date < today else "Upcoming"
-                    })
+                # Circuit to location mapping
+                circuit_locations = {
+                    "Melbourne Grand Prix Circuit": "Melbourne, Australia",
+                    "Shanghai International Circuit": "Shanghai, China",
+                    "Suzuka International Racing Course": "Suzuka, Japan",
+                    "Bahrain International Circuit": "Sakhir, Bahrain",
+                    "Jeddah Street Circuit": "Jeddah, Saudi Arabia",
+                    "Miami International Autodrome": "Miami, USA",
+                    "Autodromo Enzo e Dino Ferrari": "Imola, Italy",
+                    "Circuit de Monaco": "Monte Carlo, Monaco",
+                    "Circuit de Barcelona-Catalunya": "Barcelona, Spain",
+                    "Circuit Gilles-Villeneuve": "Montreal, Canada",
+                    "Red Bull Ring": "Spielberg, Austria",
+                    "Silverstone Circuit": "Silverstone, UK",
+                    "Hungaroring": "Budapest, Hungary",
+                    "Circuit de Spa-Francorchamps": "Spa, Belgium",
+                    "Circuit Park Zandvoort": "Zandvoort, Netherlands",
+                    "Autodromo Nazionale Monza": "Monza, Italy",
+                    "Baku City Circuit": "Baku, Azerbaijan",
+                    "Marina Bay Street Circuit": "Singapore",
+                    "Circuit of the Americas": "Austin, USA",
+                    "Autodromo Hermanos Rodriguez": "Mexico City, Mexico",
+                    "Autodromo Jose Carlos Pace": "São Paulo, Brazil",
+                    "Las Vegas Street Circuit": "Las Vegas, USA",
+                    "Losail International Circuit": "Doha, Qatar",
+                    "Yas Marina Circuit": "Abu Dhabi, UAE"
+                }
                 
-                return pd.DataFrame(events)
+                # The API returns dates as keys (e.g., "20250313")
+                for date_key in schedule_data:
+                    # Each date can have multiple events, typically just one race
+                    for event in schedule_data[date_key]:
+                        # Extract event data
+                        gp_name = event.get("gPrx", "")
+                        circuit = event.get("crct", "")
+                        completed = event.get("completed", False)
+                        
+                        # Determine location from circuit name using mapping
+                        location = circuit_locations.get(circuit, "")
+                        
+                        # If not in mapping, try to extract from circuit name
+                        if not location and circuit:
+                            # Some circuits have city names as first word
+                            parts = circuit.split()
+                            if parts:
+                                # If first word is "Circuit", try second word
+                                if parts[0].lower() == "circuit":
+                                    location = parts[1] if len(parts) > 1 else ""
+                                else:
+                                    location = parts[0]
+                        
+                        # Parse date from startDate
+                        start_date_str = event.get("startDate", "")
+                        try:
+                            event_date = datetime.strptime(start_date_str, "%Y-%m-%dT%H:%MZ").date()
+                            formatted_date = event_date.strftime("%d %b %Y")
+                        except (ValueError, TypeError):
+                            # If date parsing fails, use the date from the key
+                            try:
+                                key_date = datetime.strptime(date_key, "%Y%m%d").date()
+                                formatted_date = key_date.strftime("%d %b %Y")
+                                event_date = key_date
+                            except ValueError:
+                                formatted_date = date_key
+                                event_date = today  # Fallback
+                        
+                        # Determine winner if available
+                        winner = event.get("winner", "")
+                        
+                        events.append({
+                            "SortDate": event_date,  # Add this for sorting
+                            "Name": gp_name,
+                            "Circuit": circuit,
+                            "Location": location,
+                            "Date": formatted_date,
+                            "Status": "Completed" if completed else "Upcoming",
+                            "Winner": winner
+                        })
+                
+                # Sort events by date
+                events_sorted = sorted(events, key=lambda x: x["SortDate"])
+                
+                # Assign round numbers sequentially based on sorted dates
+                for i, event in enumerate(events_sorted, 1):
+                    event["Round"] = str(i)
+                    # Remove the temporary sort date key
+                    event.pop("SortDate")
+                
+                return pd.DataFrame(events_sorted)
         
         # Fall back to FastF1 if RapidAPI fails or is not configured
         schedule = fastf1.get_event_schedule(year)
@@ -1656,6 +1787,59 @@ def create_simulation_interface():
 def main():
     st.set_page_config(page_title="PitGenius - F1 Pit Stop Predictions", layout="wide")
     
+    # Add custom CSS for better styling
+    st.markdown("""
+    <style>
+    /* Enhance the plots and tables */
+    .predictions-container {
+        background-color: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+    }
+    
+    /* Better styling for strategy summary */
+    .strategy-summary {
+        background-color: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Style the strategy table */
+    .strategy-table {
+        width: 100%;
+        margin-top: 15px;
+    }
+    
+    /* Style section headers */
+    .section-header {
+        font-size: 20px;
+        font-weight: bold;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #ff1e1e;
+        color: #333333;
+    }
+    
+    /* Style selectors and inputs */
+    .stSelectbox {
+        margin-bottom: 15px;
+    }
+    
+    /* General page styling */
+    .main {
+        padding: 2rem;
+    }
+    
+    /* Larger plot container */
+    .element-container.st-emotion-cache-1r6slb0.e1f1d6gn2 {
+        width: 100%;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Title and description in the header
     st.title("🏎️ PitGenius: F1 Pit Stop Predictions")
     
@@ -1680,13 +1864,13 @@ def main():
     st.sidebar.markdown("### About")
     st.sidebar.info(
         "PitGenius uses machine learning to predict F1 pit stop strategies "
-        "based on historical data from the 2022-2023 seasons."
+        "based on historical data from the 2020-2023 seasons."
     )
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Developed with")
-    st.sidebar.markdown("- FastF1 🏎️")
-    st.sidebar.markdown("- Streamlit 📊")
+    st.sidebar.markdown("- FastF1, RapidAPI, and Ergast API 📊")
     st.sidebar.markdown("- Scikit-learn 🤖")
+    st.sidebar.markdown("- Streamlit 📊")
     
     # Add API status indicator
     st.sidebar.markdown("---")
@@ -1763,9 +1947,17 @@ RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
         
         with col1:
             # Race selection
+            # Find British GP in the list of races, if not found default to first race
+            default_race_index = 0
+            for idx, race in enumerate(races):
+                if "British" in race:
+                    default_race_index = idx
+                    break
+            
             selected_race = st.selectbox(
                 "Select Race",
-                races
+                races,
+                index=default_race_index
             )
         
         # Predefined list of 2024 F1 drivers
@@ -1865,33 +2057,28 @@ RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
                         col1, col2 = st.columns([2, 1])
                         
                         with col1:
-                            # Add a container with max width
+                            # Add a container with max width and better styling
                             with st.container():
-                                st.markdown(
-                                    """
-                                    <style>
-                                    .plot-container {
-                                        max-width: 800px;
-                                        margin: auto;
-                                    }
-                                    </style>
-                                    """,
-                                    unsafe_allow_html=True
-                                )
+                                st.markdown('<div class="predictions-container">', unsafe_allow_html=True)
+                                st.markdown('<h3 class="section-header">Pit Stop Prediction Chart</h3>', unsafe_allow_html=True)
+                                
                                 # Create visualization
                                 fig = plot_driver_prediction(predictions, selected_driver)
                                 st.pyplot(fig, use_container_width=True)
+                                st.markdown('</div>', unsafe_allow_html=True)
                         
                         with col2:
-                            # Display strategy summary
-                            st.subheader("Predicted Strategy Summary")
+                            # Display strategy summary with better styling
+                            st.markdown('<div class="strategy-summary">', unsafe_allow_html=True)
+                            st.markdown('<h3 class="section-header">Predicted Strategy Summary</h3>', unsafe_allow_html=True)
+                            
                             driver_preds = predictions[
                                 (predictions['Driver'] == selected_driver) & 
                                 predictions['PredictedPitStop']
                             ]
                             
                             if not driver_preds.empty:
-                                st.write(f"Number of predicted pit stops: {len(driver_preds)}")
+                                st.markdown(f"<p><strong>Number of predicted pit stops:</strong> {len(driver_preds)}</p>", unsafe_allow_html=True)
                                 
                                 # Create strategy table
                                 strategy_data = []
@@ -1919,9 +2106,26 @@ RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
                                     prev_compound = next_compound
                                 
                                 if strategy_data:
+                                    st.markdown('<div class="strategy-table">', unsafe_allow_html=True)
                                     st.table(pd.DataFrame(strategy_data))
+                                    st.markdown('</div>', unsafe_allow_html=True)
                             else:
-                                st.write("No pit stops predicted for this driver.")
+                                st.warning("No pit stops predicted for this driver.")
+                            
+                            st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # Add driver details card
+                            st.markdown('<div class="strategy-summary" style="margin-top: 20px;">', unsafe_allow_html=True)
+                            st.markdown('<h3 class="section-header">Driver Details</h3>', unsafe_allow_html=True)
+                            
+                            # Find driver's full name
+                            driver_name = next((d['name'] for d in team_drivers if d['code'] == selected_driver), selected_driver)
+                            
+                            st.markdown(f"<p><strong>Driver:</strong> {driver_name}</p>", unsafe_allow_html=True)
+                            st.markdown(f"<p><strong>Team:</strong> {selected_team}</p>", unsafe_allow_html=True)
+                            st.markdown(f"<p><strong>Race:</strong> {selected_race}</p>", unsafe_allow_html=True)
+                            
+                            st.markdown('</div>', unsafe_allow_html=True)
                     else:
                         st.error("Error making predictions. Please try again.")
                         
@@ -1936,53 +2140,109 @@ RAPIDAPI_HOST=f1-motorsport-data.p.rapidapi.com
                     historical_data = get_historical_strategy(selected_race, selected_team)
                     
                     if not historical_data.empty:
-                        # Create two columns with max-width constraint
+                        # Create two columns with improved width ratio
                         col1, col2 = st.columns([2, 1])
                         
                         with col1:
-                            # Add a container with max width
+                            # Add a container with better styling
                             with st.container():
-                                st.markdown(
-                                    """
-                                    <style>
-                                    .plot-container {
-                                        max-width: 800px;
-                                        margin: auto;
-                                    }
-                                    </style>
-                                    """,
-                                    unsafe_allow_html=True
-                                )
+                                st.markdown('<div class="predictions-container">', unsafe_allow_html=True)
+                                st.markdown('<h3 class="section-header">Historical Pit Stop Strategies</h3>', unsafe_allow_html=True)
+                                
                                 # Plot historical strategies
                                 fig = plot_historical_strategies(historical_data, selected_race, selected_team)
                                 st.pyplot(fig, use_container_width=True)
+                                st.markdown('</div>', unsafe_allow_html=True)
                         
                         with col2:
-                            # Display summary statistics
-                            st.subheader("Historical Strategy Summary")
+                            # Display summary statistics with better styling
+                            st.markdown('<div class="strategy-summary">', unsafe_allow_html=True)
+                            st.markdown('<h3 class="section-header">Historical Strategy Summary</h3>', unsafe_allow_html=True)
                             
                             avg_stops = historical_data['NumStops'].mean()
-                            st.write(f"Average number of pit stops: {avg_stops:.1f}")
+                            st.markdown(f"<p><strong>Average number of pit stops:</strong> {avg_stops:.1f}</p>", unsafe_allow_html=True)
                             
-                            # Most common compounds
+                            # Most common compounds with better styling
                             all_compounds = [compound for compounds in historical_data['Compounds'] for compound in compounds]
                             if all_compounds:
                                 compound_counts = pd.Series(all_compounds).value_counts()
-                                st.write("Most used tire compounds:")
+                                st.markdown("<p><strong>Most used tire compounds:</strong></p>", unsafe_allow_html=True)
+                                
+                                # Display compounds using Streamlit components instead of raw HTML
                                 for compound, count in compound_counts.items():
-                                    st.write(f"- {compound}: {count} times")
+                                    color = "#FF1E1E" if compound == "SOFT" else \
+                                            "#FFF200" if compound == "MEDIUM" else \
+                                            "#FFFFFF" if compound == "HARD" else \
+                                            "#39B54A" if compound == "INTERMEDIATE" else \
+                                            "#00A0DC" if compound == "WET" else "gray"
+                                    
+                                    text_color = "white" if compound in ["SOFT", "WET", "INTERMEDIATE"] else "black"
+                                    
+                                    st.markdown(
+                                        f"""<div style="display:flex; align-items:center; margin-bottom:8px;">
+                                            <span style="display:inline-block; width:100px; background-color:{color}; 
+                                            color:{text_color}; padding:3px 6px; border-radius:4px; 
+                                            text-align:center; margin-right:10px; font-weight:bold;">{compound}</span>
+                                            <span style="font-weight:bold;">{count} times</span>
+                                        </div>""", 
+                                        unsafe_allow_html=True
+                                    )
                             
-                            # Display detailed data
-                            st.subheader("Detailed Historical Data")
-                            display_data = historical_data[['Year', 'Driver', 'NumStops', 'Result']].copy()
-                            display_data = display_data.sort_values(['Year', 'Result'])
-                            st.dataframe(display_data)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # Race Details card
+                            st.markdown('<div class="strategy-summary" style="margin-top: 20px;">', unsafe_allow_html=True)
+                            st.markdown('<h3 class="section-header">Race Details</h3>', unsafe_allow_html=True)
+                            
+                            st.markdown(f"<p><strong>Team:</strong> {selected_team}</p>", unsafe_allow_html=True)
+                            st.markdown(f"<p><strong>Race:</strong> {selected_race}</p>", unsafe_allow_html=True)
+                            st.markdown(f"<p><strong>Seasons Analyzed:</strong> 2022-2024</p>", unsafe_allow_html=True)
+                            
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Display detailed data in a full-width container below
+                        st.markdown('<div class="predictions-container" style="margin-top: 20px;">', unsafe_allow_html=True)
+                        st.markdown('<h3 class="section-header">Detailed Historical Data</h3>', unsafe_allow_html=True)
+                        
+                        # Create a styled dataframe
+                        display_data = historical_data[['Year', 'Driver', 'NumStops', 'Result']].copy()
+                        display_data = display_data.sort_values(['Year', 'Result'])
+                        
+                        # Rename columns for better display
+                        display_data.columns = ['Season', 'Driver', 'Pit Stops', 'Result']
+                        
+                        # Show the dataframe with custom formatting
+                        st.dataframe(
+                            display_data,
+                            column_config={
+                                "Season": st.column_config.NumberColumn("Season", format="%d"),
+                                "Driver": st.column_config.TextColumn("Driver", width="medium"),
+                                "Pit Stops": st.column_config.NumberColumn("Pit Stops", format="%d"),
+                                "Result": st.column_config.NumberColumn("Final Position", format="P%d")
+                            },
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
                     else:
                         st.warning(f"No historical data found for {selected_team} at {selected_race}")
                     
             except Exception as e:
                 st.error(f"Error loading historical data: {str(e)}")
                 logger.error(f"Error loading historical data: {str(e)}")
+                
+                # Provide more helpful error message with potential solutions
+                st.markdown("""
+                <div style="padding: 15px; background-color: #f8f8f8; border-left: 5px solid #ff9800; margin-top: 20px;">
+                    <h4 style="color: #ff5722; margin-top: 0;">Troubleshooting Tips</h4>
+                    <ul>
+                        <li>Try selecting a different race or team combination</li>
+                        <li>Check that FastF1 can access the selected race data</li>
+                        <li>Some historical data may not be available for certain tracks or seasons</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main() 
