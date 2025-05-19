@@ -135,7 +135,7 @@ def predict_pit_stops(model: RandomForestModel, race_data: pd.DataFrame) -> np.n
 def main():
     """Main function to train and save the Random Forest model."""
     # Training configuration
-    seasons = [2020, 2021, 2022, 2023]  # Use both 2022 and 2023 seasons
+    seasons = [2020, 2021, 2022, 2023]  # Use both 2020 and 2023 seasons
     use_pca = False
     
     # Optional: Custom parameter grid
